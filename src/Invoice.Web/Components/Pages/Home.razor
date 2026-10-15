@@ -1,0 +1,117 @@
+@page "/"
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IInvoiceWebApiClient InvoiceApi
+
+<PageTitle>Invoice Desk</PageTitle>
+
+<main class="page-shell">
+    <section class="hero-strip">
+        <div>
+            <p class="eyebrow">FICTIONAL INVOICE PROCESSING SYSTEM</p>
+            <h1>One workflow. Three accountable actors.</h1>
+            <p class="lead">Entry creates. Approval decides. The Interactive Assistant submits only for the signed-in user.</p>
+        </div>
+        <a class="button primary" href="/invoices/new">Enter an invoice</a>
+    </section>
+
+    <section class="identity-grid" aria-label="Identity boundaries">
+        <article class="identity-tile entry"><span class="actor-label">AUTONOMOUS ENTRY</span><h2>D1-Invoice-Entry-Agent</h2><p>Creates and submits fictional invoices.</p><code>Invoice.Create.All</code></article>
+        <article class="identity-tile approval"><span class="actor-label">AUTONOMOUS APPROVAL</span><h2>D1-Invoice-Approval-Agent</h2><p>Evaluates only PendingApproval invoices.</p><code>Invoice.Read.All · Invoice.Approve.All</code></article>
+        <article class="identity-tile interactive"><span class="actor-label">ON BEHALF OF USER</span><h2>D1-Interactive-Invoice-Assistant</h2><p>Uses your signed-in identity to submit.</p><code>Invoice.Create.Delegated</code></article>
+    </section>
+
+    <section class="stats-grid" aria-label="Your invoices">
+        <article><span>YOUR SUBMISSIONS</span><strong>@Invoices.Count</strong></article>
+        <article><span>PENDING APPROVAL</span><strong>@Count("PendingApproval")</strong></article>
+        <article><span>APPROVED FOR PAYMENT</span><strong>@Count("ApprovedForPayment")</strong></article>
+        <article><span>REJECTED</span><strong>@Count("Rejected")</strong></article>
+    </section>
+
+    <section class="notice safety"><strong>No payment execution</strong><span>Approval changes status to ApprovedForPayment only. This demo has no payment action or Paid state.</span></section>
+
+    <section class="content-band">
+        <div class="section-heading"><div><p class="eyebrow">YOUR LATEST ACTIVITY</p><h2>Invoice workspace</h2></div><button class="button secondary" @onclick="Refresh" disabled="@Loading">Refresh</button></div>
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="status-message error">@Error</div>
+        }
+        else if (Loading)
+        {
+            <p class="muted">Loading your invoice activity…</p>
+        }
+        else if (Invoices.Count == 0)
+        {
+            <div class="empty-state"><p>No invoices submitted by this user yet.</p><a href="/invoices/new">Start a fictional invoice <span aria-hidden="true">→</span></a></div>
+        }
+        else
+        {
+            <div class="table-scroll"><table class="invoice-table"><thead><tr><th>Invoice</th><th>Supplier</th><th>Total</th><th>Status</th><th>Disposition</th></tr></thead><tbody>
+                @foreach (var invoice in Invoices.OrderByDescending(item => item.Id).Take(10))
+                {
+                    <tr><td><strong>@invoice.InvoiceNumber</strong><small>@invoice.PurchaseOrderNumber</small></td><td>@invoice.SupplierName</td><td>@invoice.Currency @invoice.TotalAmount.ToString("N2")</td><td><span class="status-badge">@invoice.Status</span></td><td>@invoice.Disposition</td></tr>
+                }
+            </tbody></table></div>
+        }
+    </section>
+
+    <section class="content-band demo-control">
+        <div class="section-heading"><div><p class="eyebrow">DEMO CONTROL</p><h2>Run autonomous team</h2><p class="muted">The worker uses separate Entry and Approval identities; this signed-in user only triggers the run.</p></div>
+            <button class="button primary" @onclick="RunAutonomous" disabled="@Running">@(Running ? "Running…" : "Run autonomous flow")</button></div>
+        @if (LatestRun is not null)
+        {
+            <div class="run-summary"><strong>@LatestRun.Status</strong><span>Correlation @LatestRun.CorrelationId</span><span>@LatestRun.Invoices.Count generated</span><span>@LatestRun.Decisions.Count decisions</span></div>
+            @foreach (var execution in LatestRun.Executions)
+            {
+                <div class="execution-row"><strong>@execution.AgentName</strong><span>@execution.Operation</span><span>@execution.Outcome</span><code>@string.Join(", ", execution.Claims.Roles.Concat(execution.Claims.Scopes))</code></div>
+            }
+        }
+    </section>
+</main>
+
+@code {
+    private IReadOnlyList<InvoiceResponse> Invoices = [];
+    private InvoiceDemoRunResult? LatestRun;
+    private bool Loading = true;
+    private bool Running;
+    private string? Error;
+
+    protected override async Task OnInitializedAsync() => await Refresh();
+
+    private int Count(string status) => Invoices.Count(invoice => invoice.Status == status);
+
+    private async Task Refresh()
+    {
+        Loading = true;
+        Error = null;
+        try
+        {
+            var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            Invoices = await InvoiceApi.ListMineAsync(state.User, CancellationToken.None);
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            Error = "Your account is signed in but does not have InvoiceSubmitter access.";
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Loading = false; }
+    }
+
+    private async Task RunAutonomous()
+    {
+        Running = true;
+        Error = null;
+        try
+        {
+            var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            LatestRun = await InvoiceApi.RunAutonomousAsync(state.User, CancellationToken.None);
+            await Refresh();
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            Error = "The autonomous demo run was denied. Check the InvoiceSubmitter role and delegated trigger scope.";
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Running = false; }
+    }
+}

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Web.AgentIdentities" />
+    <ProjectReference Include="../Invoice.Contracts/Invoice.Contracts.csproj" />
+  </ItemGroup>
+</Project>

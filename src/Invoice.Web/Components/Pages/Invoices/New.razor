@@ -1,0 +1,154 @@
+@page "/invoices/new"
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IInvoiceWebApiClient InvoiceApi
+
+<PageTitle>Enter an Invoice</PageTitle>
+
+<main class="page-shell">
+    <p class="eyebrow">INTERACTIVE ASSISTANT · ACTING FOR YOU</p>
+    <h1>Enter a fictional invoice</h1>
+    <p class="lead">The assistant validates and previews your entry, then submits it with your signed-in user identity and the assistant actor.</p>
+
+    <div class="form-layout">
+        <section class="form-panel">
+            <EditForm Model="Form" OnValidSubmit="Submit">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="fields">
+                    <div class="field"><label for="supplier">Fictional supplier</label><InputSelect id="supplier" @bind-Value="Form.SupplierId" @bind-Value:after="SupplierChanged"><option value="">Choose supplier</option>@foreach (var supplier in FictionalSupplierCatalog.All){<option value="@supplier.Id">@supplier.Name</option>}</InputSelect></div>
+                    <div class="field"><label for="currency">Currency</label><InputSelect id="currency" @bind-Value="Form.Currency"><option>EUR</option><option>USD</option><option>GBP</option></InputSelect></div>
+                    <div class="field"><label for="invoice">Invoice number</label><div class="input-action"><InputText id="invoice" @bind-Value="Form.InvoiceNumber" /><button type="button" class="button secondary" @onclick="GenerateInvoiceNumber">Generate</button></div></div>
+                    <div class="field"><label for="po">Purchase-order number</label><div class="input-action"><InputText id="po" @bind-Value="Form.PurchaseOrderNumber" /><button type="button" class="button secondary" @onclick="GeneratePurchaseOrder">Generate</button></div></div>
+                    <div class="field"><label for="invoiceDate">Invoice date</label><InputDate id="invoiceDate" @bind-Value="Form.InvoiceDate" /></div>
+                    <div class="field"><label for="dueDate">Due date</label><InputDate id="dueDate" @bind-Value="Form.DueDate" /></div>
+                    <div class="field"><label for="costCenter">Cost center</label><InputSelect id="costCenter" @bind-Value="Form.CostCenter"><option value="">Choose cost center</option>@foreach (var center in SelectedCostCenters){<option value="@center">@center</option>}</InputSelect></div>
+                    <div class="field"><label for="description">Invoice description</label><InputText id="description" @bind-Value="Form.Description" /></div>
+                </div>
+
+                <div class="section-heading line-heading"><div><h2>Invoice lines</h2><p class="muted">All suppliers, amounts, and descriptions are fictional.</p></div><button type="button" class="button secondary" @onclick="AddLine">Add line</button></div>
+                <div class="table-scroll"><table class="line-table"><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Tax %</th><th></th></tr></thead><tbody>
+                    @for (var index = 0; index < Form.Lines.Count; index++)
+                    {
+                        var line = Form.Lines[index];
+                        <tr><td><InputText aria-label="Line description" @bind-Value="line.Description" /></td><td><InputNumber aria-label="Quantity" @bind-Value="line.Quantity" /></td><td><InputNumber aria-label="Unit price" @bind-Value="line.UnitPrice" /></td><td><InputNumber aria-label="Tax rate percent" @bind-Value="line.TaxPercent" /></td><td><button type="button" class="icon-button" title="Remove line" aria-label="Remove line" @onclick="() => RemoveLine(line)">×</button></td></tr>
+                    }
+                </tbody></table></div>
+                <div class="action-row"><button type="button" class="button secondary" @onclick="Preview" disabled="@Working">Preview</button><button type="submit" class="button primary" disabled="@Working">@(Working ? "Submitting…" : "Submit invoice")</button></div>
+            </EditForm>
+        </section>
+
+        <aside class="preview-panel">
+            <p class="eyebrow">LIVE PREVIEW</p>
+            <h2>Calculated totals</h2>
+            <div class="summary-row"><span>Subtotal</span><strong>@Form.Currency @Subtotal.ToString("N2")</strong></div>
+            <div class="summary-row"><span>Tax</span><strong>@Form.Currency @Tax.ToString("N2")</strong></div>
+            <div class="summary-row total"><span>Total</span><strong>@Form.Currency @Total.ToString("N2")</strong></div>
+            <div class="notice safety"><strong>Next step</strong><span>Submission enters PendingApproval. This screen has no approve or pay action.</span></div>
+            @if (!string.IsNullOrWhiteSpace(Message))
+            {
+                <div class="status-message @(Error ? "error" : string.Empty)">@Message</div>
+            }
+            @if (LastResult is not null)
+            {
+                <dl class="identity-proof">
+                    <dt>Acting agent</dt><dd>@LastResult.Claims.Actor</dd>
+                    <dt>Signed-in user subject</dt><dd>@LastResult.Claims.Subject</dd>
+                    <dt>Permission / scope</dt><dd>@LastResult.Operation</dd>
+                    <dt>Result</dt><dd>@LastResult.Result</dd>
+                    <dt>Correlation ID</dt><dd>@LastResult.CorrelationId</dd>
+                </dl>
+            }
+        </aside>
+    </div>
+</main>
+
+@code {
+    private InvoiceForm Form { get; } = InvoiceForm.Create();
+    private bool Working;
+    private bool Error;
+    private string? Message;
+    private InteractiveInvoiceResult? LastResult;
+
+    private IReadOnlyList<string> SelectedCostCenters
+        => FictionalSupplierCatalog.TryGet(Form.SupplierId, out var supplier) ? supplier.CostCenters : [];
+
+    private decimal Subtotal => Form.Lines.Sum(line => decimal.Round(line.Quantity * line.UnitPrice, 2, MidpointRounding.AwayFromZero));
+    private decimal Tax => Form.Lines.Sum(line => decimal.Round(line.Quantity * line.UnitPrice * line.TaxPercent / 100m, 2, MidpointRounding.AwayFromZero));
+    private decimal Total => Subtotal + Tax;
+
+    private void GenerateInvoiceNumber() => Form.InvoiceNumber = $"INV-{SupplierCode()}-{RandomCode(5)}";
+    private void GeneratePurchaseOrder() => Form.PurchaseOrderNumber = $"PO-{RandomCode(4)}-{RandomCode(3)}";
+    private string SupplierCode() => FictionalSupplierCatalog.TryGet(Form.SupplierId, out var supplier) ? supplier.Id : "NWS";
+    private static string RandomCode(int length)
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        return string.Concat(Enumerable.Range(0, length).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]));
+    }
+    private void AddLine() { if (Form.Lines.Count < 5) Form.Lines.Add(new InvoiceLineForm()); }
+    private void RemoveLine(InvoiceLineForm line) { if (Form.Lines.Count > 1) Form.Lines.Remove(line); }
+    private void SupplierChanged() { Form.CostCenter = SelectedCostCenters.FirstOrDefault() ?? string.Empty; }
+
+    private async Task Preview()
+    {
+        await RunSubmissionAction(async (user) => await InvoiceApi.PreviewAsync(ToRequest(), user, CancellationToken.None), "Preview ready; invoice has not been saved.");
+    }
+
+    private async Task Submit()
+    {
+        await RunSubmissionAction(async (user) => await InvoiceApi.SubmitAsync(ToRequest(), user, CancellationToken.None), "Invoice submitted to PendingApproval.");
+    }
+
+    private async Task RunSubmissionAction(Func<ClaimsPrincipal, Task<InteractiveInvoiceResult>> operation, string successMessage)
+    {
+        Working = true;
+        Error = false;
+        Message = null;
+        try
+        {
+            var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            LastResult = await operation(state.User);
+            Message = successMessage;
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            Error = true;
+            Message = "The protected Invoice API denied this operation. Check InvoiceSubmitter authorization and delegated consent.";
+        }
+        catch (Exception exception) { Error = true; Message = exception.Message; }
+        finally { Working = false; }
+    }
+
+    private CreateInvoiceRequest ToRequest()
+        => new(Form.InvoiceNumber, Form.PurchaseOrderNumber, Form.SupplierId, Form.InvoiceDate, Form.DueDate,
+            Form.Currency, Form.Description, Form.CostCenter,
+            Form.Lines.Select(line => new InvoiceLineRequest(line.Description, line.Quantity, line.UnitPrice, line.TaxPercent / 100m)).ToArray());
+
+    private sealed class InvoiceForm
+    {
+        [Required, StringLength(32, MinimumLength = 5)] public string InvoiceNumber { get; set; } = string.Empty;
+        [Required, StringLength(32, MinimumLength = 5)] public string PurchaseOrderNumber { get; set; } = string.Empty;
+        [Required] public string SupplierId { get; set; } = "NWS";
+        [Required] public string Currency { get; set; } = "EUR";
+        [Required] public DateOnly InvoiceDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        [Required] public DateOnly DueDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(30));
+        [Required] public string CostCenter { get; set; } = "FIN-100";
+        [Required, StringLength(200)] public string Description { get; set; } = "Fictional office supplies invoice";
+        public List<InvoiceLineForm> Lines { get; set; } = [new InvoiceLineForm()];
+        public static InvoiceForm Create()
+        {
+            var form = new InvoiceForm();
+            form.InvoiceNumber = $"INV-NWS-{RandomCode(5)}";
+            form.PurchaseOrderNumber = $"PO-{RandomCode(4)}-{RandomCode(3)}";
+            return form;
+        }
+    }
+
+    private sealed class InvoiceLineForm
+    {
+        [Required, StringLength(120)] public string Description { get; set; } = "Fictional office supplies";
+        [Range(typeof(decimal), "0.001", "10000")] public decimal Quantity { get; set; } = 2m;
+        [Range(typeof(decimal), "0.01", "15000")] public decimal UnitPrice { get; set; } = 50m;
+        [Range(typeof(decimal), "0", "100")] public decimal TaxPercent { get; set; } = 20m;
+    }
+}

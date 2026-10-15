@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+<div class="app-frame">
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark">D1</span>
+            <span><strong>Invoice desk</strong><small>Identity-aware operations</small></span>
+        </a>
+        <nav>
+            <a href="/">Overview</a>
+            <a href="/invoices/new">New invoice</a>
+            <AuthorizeView>
+                <Authorized><a href="@(OperatingSystem.IsBrowser() ? "/sign-out" : "/dev/sign-out")">Sign out</a></Authorized>
+            </AuthorizeView>
+        </nav>
+    </header>
+    @Body
+</div>

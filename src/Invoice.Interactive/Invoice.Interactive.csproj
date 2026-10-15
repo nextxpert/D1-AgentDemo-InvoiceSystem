@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>D1.Invoice.Interactive</RootNamespace>
+    <AssemblyName>D1.Invoice.Interactive</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <PackageReference Include="Microsoft.Identity.Web.AgentIdentities" />
+    <ProjectReference Include="../Invoice.Contracts/Invoice.Contracts.csproj" />
+    <ProjectReference Include="../Invoice.Identity/Invoice.Identity.csproj" />
+    <ProjectReference Include="../Invoice.Domain/Invoice.Domain.csproj" />
+  </ItemGroup>
+</Project>

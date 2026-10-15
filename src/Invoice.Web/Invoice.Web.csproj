@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>D1.Invoice.Web</RootNamespace>
+    <AssemblyName>D1.Invoice.Web</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <ProjectReference Include="../Invoice.Contracts/Invoice.Contracts.csproj" />
+    <ProjectReference Include="../Invoice.Domain/Invoice.Domain.csproj" />
+  </ItemGroup>
+</Project>

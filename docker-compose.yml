@@ -1,0 +1,93 @@
+name: d1-invoice-demo
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/Invoice.Api/Dockerfile
+    image: d1-invoice-api:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DEMO_MODE: offline
+      DATABASE_PROVIDER: Sqlite
+      DATABASE_CONNECTION_STRING: Data Source=/data/invoice-demo.db
+      DEMO_MAX_AMOUNT: "15000"
+      AUTONOMOUS_APPROVAL_LIMIT: "10000"
+    ports:
+      - "8080:8080"
+    volumes:
+      - invoice-data:/data
+    healthcheck:
+      test: ["CMD", "dotnet", "Invoice.Api.dll", "--healthcheck", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/Invoice.Worker/Dockerfile
+    image: d1-invoice-worker:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DEMO_MODE: offline
+      DATABASE_PROVIDER: Sqlite
+      DATABASE_CONNECTION_STRING: Data Source=/data/invoice-demo.db
+      INVOICE_API_BASE_URL: http://api:8080/
+      DEMO_RANDOM_SEED: "20261014"
+      DEMO_BATCH_SIZE: "5"
+      DEMO_MIN_AMOUNT: "100"
+      DEMO_MAX_AMOUNT: "15000"
+      AUTONOMOUS_APPROVAL_LIMIT: "10000"
+      ENTRY_AGENT_CLIENT_ID: offline-entry-agent
+      APPROVAL_AGENT_CLIENT_ID: offline-approval-agent
+    ports:
+      - "8081:8080"
+    volumes:
+      - invoice-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+
+  interactive:
+    build:
+      context: .
+      dockerfile: src/Invoice.Interactive/Dockerfile
+    image: d1-invoice-interactive:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DEMO_MODE: offline
+      INVOICE_API_BASE_URL: http://api:8080/
+      INTERACTIVE_AGENT_CLIENT_ID: offline-interactive-agent
+      INVOICE_CREATE_DELEGATED_SCOPE: api://offline-invoice-api/Invoice.Create.Delegated
+    ports:
+      - "8082:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: src/Invoice.Web/Dockerfile
+    image: d1-invoice-web:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DEMO_MODE: offline
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      INVOICE_INTERACTIVE_API_BASE_URL: http://interactive:8080/
+      INVOICE_WORKER_BASE_URL: http://worker:8080/
+      INTERACTIVE_BLUEPRINT_ACCESS_SCOPE: api://offline-interactive-blueprint/access_as_user
+      INVOICE_CREATE_DELEGATED_SCOPE: api://offline-invoice-api/Invoice.Create.Delegated
+    ports:
+      - "8083:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+      interactive:
+        condition: service_healthy
+
+volumes:
+  invoice-data:
