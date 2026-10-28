@@ -55,27 +55,65 @@ function Invoke-Graph {
     return Invoke-MgGraphRequest @parameters
 }
 
+function Get-GraphCollectionValue($Result, [string]$Uri) {
+    if ($null -eq $Result) { throw "Microsoft Graph collection request '$Uri' returned no response." }
+    if ($Result -is [string]) { $Result = $Result | ConvertFrom-Json }
+
+    if ($Result -is [System.Collections.IDictionary]) {
+        if ($Result.Contains('value')) { return @($Result['value']) }
+        $propertyNames = @($Result.Keys)
+    }
+    else {
+        $valueProperty = $Result.PSObject.Properties['value']
+        if ($valueProperty) { return @($valueProperty.Value) }
+        $propertyNames = @($Result.PSObject.Properties | ForEach-Object Name)
+    }
+
+    if ($Result -is [System.Collections.IList] -and $Result -isnot [string]) { return @($Result) }
+    $properties = if ($propertyNames.Count -gt 0) { $propertyNames -join ', ' } else { '<none>' }
+    throw "Microsoft Graph collection request '$Uri' returned '$($Result.GetType().FullName)' without a 'value' collection. Response properties: $properties."
+}
+
 function Get-ApplicationByName([string]$Name) {
     $escaped = $Name.Replace("'", "''")
-    $result = Invoke-Graph GET "https://graph.microsoft.com/v1.0/applications?`$filter=displayName eq '$escaped'&`$select=id,appId,displayName,identifierUris,api,appRoles,web,requiredResourceAccess,signInAudience"
-    if (@($result.value).Count -gt 1) { throw "Multiple app registrations named '$Name' exist." }
-    return $result.value | Select-Object -First 1
+    $uri = "https://graph.microsoft.com/v1.0/applications?`$filter=displayName eq '$escaped'&`$select=id,appId,displayName,identifierUris,api,appRoles,web,requiredResourceAccess,signInAudience"
+    $items = @(Get-GraphCollectionValue (Invoke-Graph GET $uri) $uri)
+    if ($items.Count -gt 1) { throw "Multiple app registrations named '$Name' exist." }
+    $application = $items | Select-Object -First 1
+    $hasAppId = if ($application -is [System.Collections.IDictionary]) {
+        $application.Contains('appId')
+    }
+    else {
+        $null -ne $application.PSObject.Properties['appId']
+    }
+    if ($application -and -not $hasAppId) {
+        $properties = if ($application -is [System.Collections.IDictionary]) {
+            @($application.Keys) -join ', '
+        }
+        else {
+            @($application.PSObject.Properties | ForEach-Object Name) -join ', '
+        }
+        throw "Microsoft Graph application lookup for '$Name' omitted appId. Response properties: $properties."
+    }
+    return $application
 }
 
 function Get-ServicePrincipalByAppId([string]$AppId) {
-    $escaped = [uri]::EscapeDataString("appId eq '$AppId'")
-    $result = Invoke-Graph GET "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId%20eq%20'$AppId'&`$select=id,appId,displayName,servicePrincipalType,accountEnabled,appRoles"
-    return $result.value | Select-Object -First 1
+    $uri = "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId%20eq%20'$AppId'&`$select=id,appId,displayName,servicePrincipalType,accountEnabled,appRoles"
+    $items = @(Get-GraphCollectionValue (Invoke-Graph GET $uri) $uri)
+    return $items | Select-Object -First 1
 }
 
 function Ensure-AgentBlueprint([string]$Name, [string]$SponsorId, [string]$OwnerId) {
     $app = Get-ApplicationByName $Name
     if (-not $app) {
-        $app = Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications/microsoft.graph.agentIdentityBlueprint' @{
+        Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications/microsoft.graph.agentIdentityBlueprint' @{
             displayName = $Name
             'sponsors@odata.bind' = @("https://graph.microsoft.com/v1.0/users/$SponsorId")
             'owners@odata.bind' = @("https://graph.microsoft.com/v1.0/users/$OwnerId")
-        }
+        } | Out-Null
+        $app = Get-ApplicationByName $Name
+        if (-not $app) { throw "Microsoft Graph created blueprint '$Name' but it was not returned by the follow-up application lookup." }
     }
     $principal = Get-ServicePrincipalByAppId $app.appId
     if (-not $principal) {
@@ -87,8 +125,8 @@ function Ensure-AgentBlueprint([string]$Name, [string]$SponsorId, [string]$Owner
 function Ensure-FederatedCredential([string]$BlueprintAppId, [string]$Name, [string]$Subject) {
     if ([string]::IsNullOrWhiteSpace($Subject)) { throw "Missing managed identity principal ID for $Name." }
     $uri = "https://graph.microsoft.com/v1.0/applications/$BlueprintAppId/federatedIdentityCredentials"
-    $items = Invoke-Graph GET $uri
-    $existing = $items.value | Where-Object name -eq $Name | Select-Object -First 1
+    $items = @(Get-GraphCollectionValue (Invoke-Graph GET $uri) $uri)
+    $existing = $items | Where-Object name -eq $Name | Select-Object -First 1
     $expectedIssuer = "https://login.microsoftonline.com/$TenantId/v2.0"
     if ($existing) {
         if ($existing.issuer -ne $expectedIssuer -or $existing.subject -ne $Subject -or 'api://AzureADTokenExchange' -notin $existing.audiences) {
@@ -115,21 +153,25 @@ function Ensure-ApplicationWithApi([string]$DisplayName, [string]$IdentifierUri)
         $appRoles = foreach ($role in $roleDefinitions) {
             @{ id=[guid]::NewGuid().Guid; value=$role.value; description=$role.description; displayName=$role.displayName; allowedMemberTypes=$role.members; isEnabled=$true }
         }
-        $app = Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
+        Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
             displayName=$DisplayName; signInAudience='AzureADMyOrg'; identifierUris=@($IdentifierUri)
             api=@{ requestedAccessTokenVersion=2; oauth2PermissionScopes=@($scopeDefinition) }
             appRoles=@($appRoles)
-        }
+        } | Out-Null
+        $app = Get-ApplicationByName $DisplayName
+        if (-not $app) { throw "Microsoft Graph created application '$DisplayName' but it was not returned by the follow-up lookup." }
     }
     else {
         $roles = @($app.appRoles)
+        $roleValues = @($roles | ForEach-Object { $_.value })
         foreach ($role in $roleDefinitions) {
-            if ($role.value -notin $roles.value) {
+            if ($role.value -notin $roleValues) {
                 $roles += @{ id=[guid]::NewGuid().Guid; value=$role.value; description=$role.description; displayName=$role.displayName; allowedMemberTypes=$role.members; isEnabled=$true }
             }
         }
         $scopes = @($app.api.oauth2PermissionScopes)
-        if ('Invoice.Create.Delegated' -notin $scopes.value) { $scopes += $scopeDefinition }
+        $scopeValues = @($scopes | ForEach-Object { $_.value })
+        if ('Invoice.Create.Delegated' -notin $scopeValues) { $scopes += $scopeDefinition }
         if ($IdentifierUri -notin @($app.identifierUris)) { $app.identifierUris += $IdentifierUri }
         Invoke-Graph PATCH "https://graph.microsoft.com/v1.0/applications/$($app.id)" @{
             identifierUris=@($app.identifierUris); appRoles=$roles
@@ -147,7 +189,7 @@ function Ensure-ApplicationWithApi([string]$DisplayName, [string]$IdentifierUri)
 }
 
 function Ensure-InteractiveBlueprintApi([string]$BlueprintObjectId, [string]$BlueprintAppId, [string]$WebClientAppId) {
-    $app = Invoke-Graph GET "https://graph.microsoft.com/v1.0/applications/$BlueprintObjectId?`$select=id,appId,identifierUris,api,optionalClaims"
+    $app = Invoke-Graph GET "https://graph.microsoft.com/v1.0/applications/${BlueprintObjectId}?`$select=id,appId,identifierUris,api,optionalClaims"
     $scopes = @($app.api.oauth2PermissionScopes)
     $access = $scopes | Where-Object value -eq 'access_as_user' | Select-Object -First 1
     if (-not $access) {
@@ -157,8 +199,31 @@ function Ensure-InteractiveBlueprintApi([string]$BlueprintObjectId, [string]$Blu
         $scopes += $access
     }
     $preAuthorized = @($app.api.preAuthorizedApplications)
-    if ($WebClientAppId -and $WebClientAppId -notin $preAuthorized.appId) {
-        $preAuthorized += @{ appId=$WebClientAppId; permissionIds=@($access.id) }
+    $preAuthorizedForUpdate = @()
+    $preAuthorizationChanged = $false
+    $hasWebPreAuthorization = $false
+    if ($WebClientAppId) {
+        foreach ($preAuthorizedApplication in $preAuthorized) {
+            if ($preAuthorizedApplication.appId -eq $WebClientAppId) {
+                $hasWebPreAuthorization = $true
+                $delegatedPermissionIds = @($preAuthorizedApplication.delegatedPermissionIds)
+                if ($access.id -notin $delegatedPermissionIds) {
+                    $delegatedPermissionIds += $access.id
+                    $preAuthorizationChanged = $true
+                }
+                $preAuthorizedForUpdate += @{ appId=$WebClientAppId; delegatedPermissionIds=$delegatedPermissionIds }
+            }
+            else {
+                $preAuthorizedForUpdate += $preAuthorizedApplication
+            }
+        }
+        if (-not $hasWebPreAuthorization) {
+            $preAuthorizedForUpdate += @{ appId=$WebClientAppId; delegatedPermissionIds=@($access.id) }
+            $preAuthorizationChanged = $true
+        }
+    }
+    else {
+        $preAuthorizedForUpdate = $preAuthorized
     }
     $identifier = "api://$BlueprintAppId"
     Invoke-Graph PATCH "https://graph.microsoft.com/v1.0/applications/$BlueprintObjectId" @{
@@ -166,20 +231,25 @@ function Ensure-InteractiveBlueprintApi([string]$BlueprintObjectId, [string]$Blu
         api=@{ requestedAccessTokenVersion=2; oauth2PermissionScopes=$scopes; preAuthorizedApplications=$preAuthorized }
         optionalClaims=@{ accessToken=@(@{ name='idtyp'; essential=$false; additionalProperties=@('include_user_token') }) }
     } | Out-Null
+    if ($preAuthorizationChanged) {
+        Invoke-Graph PATCH "https://graph.microsoft.com/v1.0/applications/$BlueprintObjectId" @{
+            api=@{ requestedAccessTokenVersion=2; oauth2PermissionScopes=$scopes; preAuthorizedApplications=$preAuthorizedForUpdate }
+        } | Out-Null
+    }
     return $access
 }
 
 function Ensure-AppRoleAssignment([string]$PrincipalObjectId, [string]$ResourceSpId, [string]$RoleId, [ValidateSet('servicePrincipals','users')][string]$PrincipalType='servicePrincipals') {
     $uri = "https://graph.microsoft.com/v1.0/$PrincipalType/$PrincipalObjectId/appRoleAssignments"
-    $existing = Invoke-Graph GET $uri
-    if ($existing.value | Where-Object { $_.resourceId -eq $ResourceSpId -and $_.appRoleId -eq $RoleId }) { return }
+    $existing = @(Get-GraphCollectionValue (Invoke-Graph GET $uri) $uri)
+    if ($existing | Where-Object { $_.resourceId -eq $ResourceSpId -and $_.appRoleId -eq $RoleId }) { return }
     Invoke-Graph POST $uri @{ principalId=$PrincipalObjectId; resourceId=$ResourceSpId; appRoleId=$RoleId } | Out-Null
 }
 
 function Ensure-DelegatedGrant([string]$ClientSpId, [string]$ResourceSpId, [string]$Scope) {
     $uri = "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?`$filter=clientId eq '$ClientSpId' and resourceId eq '$ResourceSpId'"
-    $grants = Invoke-Graph GET $uri
-    $grant = $grants.value | Select-Object -First 1
+    $grants = @(Get-GraphCollectionValue (Invoke-Graph GET $uri) $uri)
+    $grant = $grants | Select-Object -First 1
     if ($grant) {
         $scopes = @($grant.scope -split ' ' | Where-Object { $_ })
         if ($Scope -notin $scopes) {
@@ -194,7 +264,7 @@ function Ensure-DelegatedGrant([string]$ClientSpId, [string]$ResourceSpId, [stri
 }
 
 function Ensure-RequiredDelegatedPermission([string]$ClientAppObjectId, [string]$ResourceAppId, [string]$ScopeId) {
-    $uri = "https://graph.microsoft.com/v1.0/applications/$ClientAppObjectId?`$select=id,requiredResourceAccess"
+    $uri = "https://graph.microsoft.com/v1.0/applications/${ClientAppObjectId}?`$select=id,requiredResourceAccess"
     $client = Invoke-Graph GET $uri
     $resources = @($client.requiredResourceAccess)
     $resource = $resources | Where-Object resourceAppId -eq $ResourceAppId | Select-Object -First 1
@@ -210,7 +280,7 @@ function Ensure-RequiredDelegatedPermission([string]$ClientAppObjectId, [string]
 
 function Resolve-Agent([string]$Name, [string]$ClientId, [string]$ObjectId) {
     if ([string]::IsNullOrWhiteSpace($ClientId) -or [string]::IsNullOrWhiteSpace($ObjectId)) { return $null }
-    $sp = Invoke-Graph GET "https://graph.microsoft.com/v1.0/servicePrincipals/$ObjectId?`$select=id,appId,displayName,accountEnabled"
+    $sp = Invoke-Graph GET "https://graph.microsoft.com/v1.0/servicePrincipals/${ObjectId}?`$select=id,appId,displayName,accountEnabled"
     if ($sp.id -ne $ObjectId -or $sp.appId -ne $ClientId) { throw "$Name object/client ID combination does not match Graph." }
     if ($sp.accountEnabled -eq $false) { throw "$Name is disabled." }
     return $sp
@@ -227,9 +297,11 @@ $autonomousFic = Ensure-FederatedCredential $autonomous.AppId 'fic-d1-invoice-wo
 $interactiveFic = Ensure-FederatedCredential $interactive.AppId 'fic-d1-invoice-interactive' $foundation.InteractiveManagedIdentity.PrincipalId
 $apiRegistration = Get-ApplicationByName $ApiDisplayName
 if (-not $apiRegistration) {
-    $apiRegistration = Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
+    Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
         displayName=$ApiDisplayName; signInAudience='AzureADMyOrg'
-    }
+    } | Out-Null
+    $apiRegistration = Get-ApplicationByName $ApiDisplayName
+    if (-not $apiRegistration) { throw "Microsoft Graph created application '$ApiDisplayName' but it was not returned by the follow-up lookup." }
 }
 $apiUri = if (@($apiRegistration.identifierUris).Count -gt 0) { $apiRegistration.identifierUris[0] } else { 'api://{0}' -f $apiRegistration.appId }
 $api = Ensure-ApplicationWithApi $ApiDisplayName $apiUri
@@ -242,10 +314,12 @@ $webRedirectUris = @('http://localhost:8083/signin-oidc')
 if ($productionRedirectUri) { $webRedirectUris += $productionRedirectUri }
 $webLogoutUrl = if ($productionRedirectUri) { $productionRedirectUri.Replace('/signin-oidc','/signout-callback-oidc') } else { 'http://localhost:8083/signout-callback-oidc' }
 if (-not $web) {
-    $web = Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
+    Invoke-Graph POST 'https://graph.microsoft.com/v1.0/applications' @{
         displayName=$WebClientDisplayName; signInAudience='AzureADMyOrg';
         web=@{ redirectUris=$webRedirectUris; logoutUrl=$webLogoutUrl }
-    }
+    } | Out-Null
+    $web = Get-ApplicationByName $WebClientDisplayName
+    if (-not $web) { throw "Microsoft Graph created application '$WebClientDisplayName' but it was not returned by the follow-up lookup." }
 }
 else {
     $existingRedirectUris = @($web.web.redirectUris)

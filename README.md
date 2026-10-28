@@ -19,10 +19,10 @@ The existing `AgentDemo-NIC2026` T1 demo is a separate repository and is not mod
 - [x] Four multi-stage Dockerfiles, Docker Compose topology, and five requested design/demo/security docs
 - [x] D1-only Entra, Azure foundation, immutable ACR image, and Container Apps deployment scripts with explicit manual identity checkpoint
 - [ ] D1 Entra object provisioning/consent and live tenant token proof
-- [ ] Docker/Compose runtime validation (Docker is not available in the current environment)
+- [x] Docker/Compose runtime validation (all four services healthy; offline wrong-role checks pass)
 - [ ] Final offline script polish and full post-deployment verification
 
-The full .NET solution builds locally and the test suite is green with the installed .NET 10 SDK. Docker is unavailable here, and Azure provisioning/deployment have **not** been run.
+The full .NET solution builds and the test suite is green with .NET 10, including inside the Docker build. The offline Compose stack has been validated locally; Azure provisioning/deployment have **not** been run.
 
 Run the automated local offline smoke with `pwsh -File ./Run-D1OfflineDemo.ps1`; it verifies all four services, five generated invoices, the two agent-role denials, and the interactive no-role 403.
 

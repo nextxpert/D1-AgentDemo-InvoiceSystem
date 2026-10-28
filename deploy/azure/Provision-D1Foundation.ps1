@@ -28,11 +28,23 @@ function Assert-Command([string]$Name) {
 }
 
 function Invoke-Az([string[]]$Arguments, [switch]$Json) {
-    $output = & az @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "az $($Arguments -join ' ') failed: $($output -join [Environment]::NewLine)" }
-    $text = ($output | ForEach-Object { $_.ToString() }) -join "`n"
-    if ($Json -and $text.Trim()) { return $text | ConvertFrom-Json }
-    return $text.Trim()
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        $output = & az @Arguments 2> $stderrPath
+        $exitCode = $LASTEXITCODE
+        $stderr = [IO.File]::ReadAllText($stderrPath).Trim()
+        $text = ($output | ForEach-Object { $_.ToString() }) -join "`n"
+        if ($exitCode -ne 0) {
+            $details = @($stderr, $text | Where-Object { $_ }) -join [Environment]::NewLine
+            throw "az $($Arguments -join ' ') failed: $details"
+        }
+        if ($stderr) { Write-Warning $stderr }
+        if ($Json -and $text.Trim()) { return $text | ConvertFrom-Json }
+        return $text.Trim()
+    }
+    finally {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Assert-Command 'az'

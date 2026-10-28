@@ -39,6 +39,28 @@ Entry should carry only `Invoice.Create.All`. Approval should carry only `Invoic
 - Compose host ports: 8080, 8081, 8082, 8083 respectively. Check `depends_on` health and container logs if a caller sees connection refused.
 - All images use multi-stage builds and non-root runtime. A build must fail if tests fail.
 
+### SQLite volume permissions
+
+If the API is unhealthy and its logs show `SQLite Error 14: 'unable to open database file'`,
+the shared `/data` volume may be owned by root from an older image. The API and Worker
+images initialize new volumes with ownership matching their non-root runtime user.
+Rebuilding does not change ownership on an existing volume.
+
+Repair the existing default Compose volume without deleting its database:
+
+```bash
+docker compose stop
+docker run --rm --user 0 \
+  --mount type=volume,src=d1-invoice-demo_invoice-data,dst=/data \
+  mcr.microsoft.com/dotnet/sdk:10.0-noble \
+  sh -c 'chown -R "$APP_UID:$APP_UID" /data'
+docker compose up --build -d --wait
+```
+
+If you override the Compose project name, use the actual volume name shown by
+`docker volume ls` instead. Do not use `docker compose down -v` unless you intend
+to delete the stored demo data.
+
 ## Isolation tests and token caching
 
 Agent Identity tokens can be cached in process. After disabling Entry or Approval, restart the worker so a cached token cannot mask the kill switch; allow Entra propagation. Confirm the other agent still succeeds, then re-enable and restart. Never leave a demo agent disabled after rehearsal.
