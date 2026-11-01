@@ -86,6 +86,8 @@ All values below are identifiers or non-secret sample defaults except the Web OI
 
 For local offline values and placeholder IDs, see `.env.example`. For Azure, use managed identity/FIC for blueprints and securely provision the Web client credential. The deploy script prompts for that credential as a hidden secure string, then stages it in a permission-restricted temporary file for Key Vault upload; it is not written to the repository or image. The generated PostgreSQL admin password is stored in Key Vault and is passed briefly to Azure CLI during server creation.
 
+Azure service URLs use internal HTTPS ingress: `https://invoice-api.internal.<environment-domain>/`, `https://invoice-interactive.internal.<environment-domain>/`, and `https://invoice-worker.internal.<environment-domain>/`. The deploy script derives these from foundation evidence. Do not copy the Compose-only `http://invoice-*:8080/` URLs into Azure configuration; 8080 is the container target port, not the ingress connection port.
+
 ## Deployment sequence
 
 These scripts are intentionally not run by the implementation workflow. Review the target tenant, subscription, resource group, and costs before invoking them. They default to D1 names, create no T1 resources, and emit non-secret evidence under `deploy/**/evidence/`.

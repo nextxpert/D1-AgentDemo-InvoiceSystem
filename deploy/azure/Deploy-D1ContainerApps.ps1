@@ -241,25 +241,28 @@ $apiDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaul
 $workerDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaultUri + 'secrets/database-connection-string,identityref:' + $foundation.AutonomousManagedIdentity.ResourceId
 $interactiveDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaultUri + 'secrets/database-connection-string,identityref:' + $foundation.InteractiveManagedIdentity.ResourceId
 $webSecretReference = 'web-client-secret=keyvaultref:' + $vault.properties.vaultUri + 'secrets/web-client-secret,identityref:' + $foundation.WebManagedIdentity.ResourceId
+$apiBaseUrl = "https://invoice-api.internal.$($foundation.ContainerAppsEnvironmentDomain)/"
+$interactiveApiBaseUrl = "https://invoice-interactive.internal.$($foundation.ContainerAppsEnvironmentDomain)/"
+$workerBaseUrl = "https://invoice-worker.internal.$($foundation.ContainerAppsEnvironmentDomain)/"
 $common = @('DEMO_MODE=live','DATABASE_PROVIDER=PostgreSQL','DATABASE_CONNECTION_STRING=secretref:database-connection',"TENANT_ID=$TenantId")
 $apiEnv = $common + @("INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",'ASPNETCORE_ENVIRONMENT=Production')
 $workerEnv = $common + @("AUTONOMOUS_BLUEPRINT_CLIENT_ID=$($entra.AutonomousBlueprint.AppId)",
     "AZURE_CLIENT_ID=$($identity.ClientId)","ENTRY_AGENT_CLIENT_ID=$EntryAgentClientId","APPROVAL_AGENT_CLIENT_ID=$ApprovalAgentClientId",
     "INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",
-    'INVOICE_API_BASE_URL=http://invoice-api:8080/','ASPNETCORE_ENVIRONMENT=Production')
+    "INVOICE_API_BASE_URL=$apiBaseUrl",'ASPNETCORE_ENVIRONMENT=Production')
 $interactiveEnv = $common + @("INTERACTIVE_BLUEPRINT_CLIENT_ID=$($entra.InteractiveBlueprint.AppId)",
     "INTERACTIVE_BLUEPRINT_AUDIENCE=api://$($entra.InteractiveBlueprint.AppId)",
     "INTERACTIVE_AZURE_CLIENT_ID=$($foundation.InteractiveManagedIdentity.ClientId)",
     "INTERACTIVE_AGENT_CLIENT_ID=$($entra.InteractiveAgent.ClientId)",
     "INVOICE_CREATE_DELEGATED_SCOPE=$($entra.ApiApp.IdentifierUri)/Invoice.Create.Delegated",
     "INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",
-    'INVOICE_API_BASE_URL=http://invoice-api:8080/','ASPNETCORE_ENVIRONMENT=Production')
+    "INVOICE_API_BASE_URL=$apiBaseUrl",'ASPNETCORE_ENVIRONMENT=Production')
 $publicHost = if ($WebPublicHost) { $WebPublicHost } else { 'invoice-web.' + $foundation.ContainerAppsEnvironmentDomain }
 $webEnv = @('DEMO_MODE=live',"WEB_CLIENT_ID=$($entra.WebClient.AppId)",'WEB_CLIENT_SECRET=secretref:web-client-secret',
     "TENANT_ID=$TenantId","INTERACTIVE_BLUEPRINT_ACCESS_SCOPE=api://$($entra.InteractiveBlueprint.AppId)/access_as_user",
     "WEB_PUBLIC_HOST=$publicHost",
     "INVOICE_CREATE_DELEGATED_SCOPE=$($entra.ApiApp.IdentifierUri)/Invoice.Create.Delegated",
-    'INVOICE_INTERACTIVE_API_BASE_URL=http://invoice-interactive:8080/','INVOICE_WORKER_BASE_URL=http://invoice-worker:8080/',
+    "INVOICE_INTERACTIVE_API_BASE_URL=$interactiveApiBaseUrl","INVOICE_WORKER_BASE_URL=$workerBaseUrl",
     'ASPNETCORE_ENVIRONMENT=Production')
 $acrLoginServer = $foundation.AcrLoginServer
 Deploy-ContainerApp 'invoice-api' $apiImage $foundation.ApiManagedIdentity.ResourceId $acrLoginServer $apiEnv $false @($apiDatabaseSecret)

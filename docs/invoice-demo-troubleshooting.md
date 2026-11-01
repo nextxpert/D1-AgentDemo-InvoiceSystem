@@ -46,6 +46,8 @@ Entry should carry only `Invoice.Create.All`. Approval should carry only `Invoic
 
 ## Containers and ports
 
+- In Azure Container Apps, callers must use the destination app's HTTPS ingress URL, such as `https://invoice-api.internal.<environment-domain>/`. The container listens on port 8080, but callers do not connect directly to that port through the ingress hostname. The Compose URL `http://invoice-api:8080/` is for local rehearsal only.
+- If the Web invoice list times out after 100 seconds, inspect its HttpClient destination before increasing timeouts. Verify `INVOICE_INTERACTIVE_API_BASE_URL` and `INVOICE_WORKER_BASE_URL` use the respective internal HTTPS ingress hostnames; verify `INVOICE_API_BASE_URL` on Interactive and Worker uses the API's internal HTTPS hostname. Preserve internal-only ingress and existing token authorization. A configuration update creates new revisions and requires fresh sign-in if the Web in-memory token cache was restarted.
 - API: port 8080, health `/healthz`, readiness `/readyz`.
 - Worker: port 8080, health `/healthz`, readiness `/readyz`.
 - Interactive API: port 8080.
