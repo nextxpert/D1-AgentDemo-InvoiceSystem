@@ -1,5 +1,19 @@
 # Invoice Demo Troubleshooting
 
+## Web sign-in returns HTTP 500
+
+If `/healthz` succeeds but `/sign-in` fails, inspect Web console logs before changing roles or secrets. `IDX20803` / `IDX20807` referencing `https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/...` means OIDC is using the placeholder tenant, not an invalid user password or failed agent permission.
+
+The Web host maps `TENANT_ID` into `AzureAd:TenantId` and rejects missing/zero tenant GUIDs in live mode. Older Web images did not perform that mapping even when deployment supplied the correct `TENANT_ID`. For an older deployed image, an approved configuration-only workaround is to add `AzureAd__TenantId` with the same real tenant GUID under **invoice-web > Containers > Environment variables**, preserving every existing setting and secret reference. This creates a new Web revision; wait for it to be healthy and receiving traffic before retrying.
+
+Rebuild and deploy the corrected Web image for the permanent code fix. Confirm `/sign-in` returns HTTP 302 to the real tenant's Microsoft Entra authorization endpoint, with the deployed HTTPS `/signin-oidc` callback. This verifies the sign-in challenge only; user sign-in, consent, interactive OBO, and API authorization still need separate validation. Never enable offline mode in Azure to bypass the failure.
+
+### Callback fails with AADSTS28000
+
+If login reaches `/signin-oidc` and then returns 500, check for `AADSTS28000: ... scope ... contains more than one resource`. Initial sign-in must request only the Interactive blueprint's `access_as_user` resource scope, alongside standard OIDC scopes. Do not include `Invoice.Create.Delegated` for the separate Invoice API in the same authorization-code redemption.
+
+The Web client acquires the Invoice API token separately when the user triggers a worker command; retain the Web client's consent for that API and the `INVOICE_CREATE_DELEGATED_SCOPE` setting. Deploy the corrected Web image, then start a fresh `/sign-in` flow in a private browser window. Refreshing or replaying the failed `/signin-oidc` callback cannot retry a completed authorization-code exchange safely.
+
 ## 401 versus 403
 
 - **401** means the API could not authenticate the request: missing bearer token, bad signature, wrong issuer/tenant, expired token, or wrong audience. Confirm the web token audience is the interactive blueprint for the first hop and the OBO token audience is the Invoice API for the downstream hop.

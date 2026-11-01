@@ -19,8 +19,8 @@
   },
   {
     "Name": "web",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web:7031df03722f",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web@sha256:2977104d94241748ce48e3419b2b579ecd5fee65fc3c25fc3810f495e051948b",
-    "Digest": "sha256:2977104d94241748ce48e3419b2b579ecd5fee65fc3c25fc3810f495e051948b"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web:callback-fix-20261101",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web@sha256:98bb3cd4001f09e6f8e4e2754af183e12f36f94ba2c1f22231d06bea9cd27a45",
+    "Digest": "sha256:98bb3cd4001f09e6f8e4e2754af183e12f36f94ba2c1f22231d06bea9cd27a45"
   }
 ]

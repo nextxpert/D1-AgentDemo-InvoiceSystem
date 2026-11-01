@@ -51,6 +51,9 @@ if (offline)
 }
 else
 {
+    var tenantId = builder.Configuration["TENANT_ID"];
+    if (!Guid.TryParse(tenantId, out var tenantGuid) || tenantGuid == Guid.Empty)
+        throw new InvalidOperationException("TENANT_ID must be a non-empty tenant GUID in live mode.");
     var webClientId = builder.Configuration["WEB_CLIENT_ID"]
         ?? throw new InvalidOperationException("WEB_CLIENT_ID is required in live mode.");
     var webClientSecret = builder.Configuration["WEB_CLIENT_SECRET"];
@@ -58,6 +61,7 @@ else
         throw new InvalidOperationException("WEB_CLIENT_SECRET must be provided through secure runtime configuration in live mode.");
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     {
+        ["AzureAd:TenantId"] = tenantId,
         ["AzureAd:ClientId"] = webClientId,
         ["AzureAd:ClientSecret"] = webClientSecret
     });
@@ -65,7 +69,7 @@ else
         ?? throw new InvalidOperationException("INTERACTIVE_BLUEPRINT_ACCESS_SCOPE is required in live mode.");
     builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
         .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"))
-        .EnableTokenAcquisitionToCallDownstreamApi([blueprintScope, builder.Configuration["INVOICE_CREATE_DELEGATED_SCOPE"]!])
+        .EnableTokenAcquisitionToCallDownstreamApi([blueprintScope])
         .AddInMemoryTokenCaches();
 }
 
