@@ -1,0 +1,26 @@
+[
+  {
+    "Name": "api",
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api:7031df03722f",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api@sha256:017550f79fc5a0a9d1f0b54fa4b8a453c1f41ca63f1dcad2ecc0356c47cbe6ec",
+    "Digest": "sha256:017550f79fc5a0a9d1f0b54fa4b8a453c1f41ca63f1dcad2ecc0356c47cbe6ec"
+  },
+  {
+    "Name": "worker",
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker:7031df03722f",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker@sha256:9b1c8a49f887a67de89bf24fe29e41c61cca5cb57e269b090c20532bf06140ea",
+    "Digest": "sha256:9b1c8a49f887a67de89bf24fe29e41c61cca5cb57e269b090c20532bf06140ea"
+  },
+  {
+    "Name": "interactive",
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive:7031df03722f",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive@sha256:e1c2375acbf348f150262bcc835804f406873ca5244ed2fa295bddb9ecbdaefc",
+    "Digest": "sha256:e1c2375acbf348f150262bcc835804f406873ca5244ed2fa295bddb9ecbdaefc"
+  },
+  {
+    "Name": "web",
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web:7031df03722f",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web@sha256:2977104d94241748ce48e3419b2b579ecd5fee65fc3c25fc3810f495e051948b",
+    "Digest": "sha256:2977104d94241748ce48e3419b2b579ecd5fee65fc3c25fc3810f495e051948b"
+  }
+]

@@ -97,7 +97,31 @@ These scripts are intentionally not run by the implementation workflow. Review t
 5. Build immutable ACR image digests with `deploy/scripts/Build-D1Images.ps1 -AcrName <acr-name>`. This is the only step that builds and pushes images.
 6. Run `deploy/azure/Deploy-D1ContainerApps.ps1` with the target subscription/tenant, the operator's current public IPv4 address, and the Entry/Approval Agent client IDs. Enter the Web client secret at the hidden prompt if it is not already in Key Vault. It creates PostgreSQL, restricts its firewall to Container Apps egress IPs, grants secret-scoped Key Vault access, and deploys the four apps using digest references.
 
+If the environment response does not report `outboundIpAddresses`, pass `-ContainerAppsEgressIps` with verified outbound IPv4 addresses or prepare the stable-egress foundation below. Do not use the environment's inbound `staticIp` or the operator's IP as a substitute. The deployment script automatically reads `ContainerAppsEgressIps` and the target environment name from foundation evidence; explicit overrides must still match that foundation. Without verified egress addresses, deployment stops before changing database firewall rules.
+
 The Entra script derives the production OIDC redirect URI from the Container Apps environment domain. For a custom domain, bind its DNS and certificate first, then pass `-WebProductionRedirectUri https://<host>/signin-oidc` to Entra provisioning and `-WebPublicHost <host>` to the Container Apps deployer. The Web runtime honors forwarded HTTPS headers and filters forwarded hosts to its configured public hostname. After deployment, verify `/healthz` and `/readyz`, sign in, run a live OBO submit, run the autonomous flow, and repeat the wrong-role tests. A successful local offline run is not proof of live OBO claims.
+
+### Stable egress cutover
+
+The opt-in networking template in `infra/main.bicep` adds `cae-d1-invoice-demo-nat`, `vnet-d1-invoice-demo` (`10.42.0.0/16`), an exclusive delegated `snet-containerapps` (`10.42.0.0/23`), `nat-d1-invoice-demo` (Standard), and `pip-d1-invoice-egress` (Standard static IPv4). Apps can retain the Consumption workload profile. The existing environment, registry, database, vault, identities and agent blueprints are not replaced by this template; the existing Log Analytics workspace is referenced for logs.
+
+A default-network environment cannot be changed to a custom VNet after creation. This is an additive environment replacement, not an in-place network update. Standard NAT and its public IPv4 incur recurring charges even when the demo is idle, plus processing and bandwidth charges. Standard NAT is not zone-redundant. Public authenticated web ingress is intentionally retained; subnet NSGs are not a substitute for protecting that ingress.
+
+1. Review `.azure/infrastructure-plan.json`, subnet overlap, subscription policies, current regional NAT pricing and the existing apps before provisioning. Local validation does not replace live ARM validation. Run `az bicep build --file infra/main.bicep` and `checkov -d infra/` before deployment; resolve security findings or explicitly approve the documented demo exceptions.
+2. Preview the additive networking change using the existing foundation evidence:
+
+	 ```powershell
+	 ./deploy/azure/Provision-D1Foundation.ps1 `
+		 -SubscriptionId '<subscription-id>' `
+		 -TenantId '<tenant-id>' `
+		 -EnableStableEgress
+	 ```
+
+	 This authenticates, runs ARM validation and what-if, and displays resource IDs/change types only. It does not provision networking or overwrite foundation evidence. `Microsoft.Network` must be registered for live preflight. Any proposed modification/deletion is rejected; investigate it rather than bypassing the guard.
+3. After separate approval of costs and the preview, rerun the same command with `-ConfirmStableEgressDeployment`. The confirmed path registers `Microsoft.Network`, repeats preflight, deploys incrementally, verifies the environment/subnet/NAT/public IP chain, and updates foundation evidence with the new name/domain, verified `ContainerAppsEgressIps`, and previous environment name/domain. It does not delete the original environment or move apps.
+4. Rerun Entra provisioning with `-ContinueAfterManualCheckpoint` and all three existing child-Agent-Identity client/object ID pairs. The existing Web registration receives the new production redirect URI from foundation evidence. Do not create new child identities or change managed-identity federation. Retain the old redirect URI until cutover verification; separately review custom domains and bindings.
+5. Rerun the app deployer with the existing subscription, tenant, operator IP and child client IDs. It takes the new environment and egress IP from foundation evidence. If a same-named demo app already belongs to the original environment, the script stops before secret/database/firewall changes. Approve an explicit app migration strategy before removing/recreating those apps; cross-environment updates and automatic deletion are not supported.
+6. Verify new app readiness, PostgreSQL connectivity, Web sign-in, interactive OBO and autonomous invoices. Approve cleanup of the original environment separately only after successful cutover.
 
 ## Azure resource naming
 

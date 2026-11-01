@@ -1,0 +1,11 @@
+using './main.bicep'
+
+param location = 'westeurope'
+param environmentName = 'cae-d1-invoice-demo-nat'
+param logAnalyticsWorkspaceName = 'log-d1-invoice-demo'
+param virtualNetworkName = 'vnet-d1-invoice-demo'
+param subnetName = 'snet-containerapps'
+param virtualNetworkAddressPrefix = '10.42.0.0/16'
+param subnetAddressPrefix = '10.42.0.0/23'
+param natGatewayName = 'nat-d1-invoice-demo'
+param publicIpName = 'pip-d1-invoice-egress'

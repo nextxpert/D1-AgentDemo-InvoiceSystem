@@ -7,6 +7,7 @@ param(
     [string]$ResourceGroup = 'rg-d1-invoice-demo',
     [string]$Location = 'westeurope',
     [string]$ContainerAppsEnvironment = 'cae-d1-invoice-demo',
+    [string[]]$ContainerAppsEgressIps = @(),
     [string]$PostgresServerName = 'pg-d1-invoice-demo',
     [ValidatePattern('^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$')][string]$WebPublicHost,
     [ValidatePattern('^[a-z][a-z0-9]{2,23}$')][string]$KeyVaultName,
@@ -15,7 +16,7 @@ param(
     [securestring]$WebClientSecret,
     [string]$FoundationEvidencePath = (Join-Path $PSScriptRoot 'evidence/azure-foundation.json'),
     [string]$EntraEvidencePath = (Join-Path $PSScriptRoot '..' 'entra/evidence/entra-authorization.json'),
-    [string]$ImageManifestPath = (Join-Path $PSScriptRoot '..' 'scripts/image-manifest.json'),
+    [string]$ImageManifestPath = (Join-Path $PSScriptRoot '..' 'image-manifest.json'),
     [string]$EvidencePath = (Join-Path $PSScriptRoot 'evidence')
 )
 
@@ -29,7 +30,9 @@ function Assert-Command([string]$Name) {
 function Invoke-Az([string[]]$Arguments, [switch]$Json) {
     $output = & az @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "az $($Arguments -join ' ') failed: $($output -join [Environment]::NewLine)" }
-    $text = ($output | ForEach-Object { $_.ToString() }) -join "`n"
+    $diagnostics = ($output | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { $_.ToString() }) -join "`n"
+    if ($diagnostics) { Write-Warning $diagnostics }
+    $text = ($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { $_.ToString() }) -join "`n"
     if ($Json -and $text.Trim()) { return $text | ConvertFrom-Json }
     return $text.Trim()
 }
@@ -68,8 +71,8 @@ function Ensure-RoleAssignment([string]$PrincipalId, [string]$Scope, [string]$Ro
 }
 
 function Ensure-SecretReader([string]$PrincipalId, [string]$Vault, [string]$SecretName) {
-    $secretId = Invoke-Az @('keyvault','secret','show','--vault-name',$Vault,'--name',$SecretName,'--query','id','--output','tsv')
-    $scope = $secretId.Substring(0, $secretId.LastIndexOf('/'))
+    $vaultResourceId = Invoke-Az @('keyvault','show','--name',$Vault,'--resource-group',$ResourceGroup,'--query','id','--output','tsv')
+    $scope = "$vaultResourceId/secrets/$SecretName"
     Ensure-RoleAssignment $PrincipalId $scope 'Key Vault Secrets User'
 }
 
@@ -77,6 +80,14 @@ function Get-ManifestImage([object[]]$Images, [string]$Name) {
     $image = $Images | Where-Object Name -eq $Name | Select-Object -First 1
     if (-not $image -or [string]::IsNullOrWhiteSpace($image.DigestReference)) { throw "Image '$Name' is missing from the image manifest." }
     return $image.DigestReference
+}
+
+function Assert-ContainerAppEnvironment($App, [string]$ExpectedEnvironmentId) {
+    $environmentProperty = $App.properties.PSObject.Properties['environmentId']
+    if (-not $environmentProperty) { $environmentProperty = $App.properties.PSObject.Properties['managedEnvironmentId'] }
+    if (-not $environmentProperty -or $environmentProperty.Value -ne $ExpectedEnvironmentId) {
+        throw "Container App '$($App.name)' is not in the target environment. Apps cannot be moved between environments in place. Plan an explicit migration before deploying; this script will not delete or move existing apps."
+    }
 }
 
 function Deploy-ContainerApp {
@@ -87,6 +98,7 @@ function Deploy-ContainerApp {
     $existing = $null
     try { $existing = Invoke-Az @('containerapp','show','--resource-group',$ResourceGroup,'--name',$Name,'--output','json') -Json } catch { }
     if ($existing) {
+        Assert-ContainerAppEnvironment $existing $targetEnvironmentId
         if ($existing.tags.'d1-demo' -ne 'invoice-system') { throw "Refusing to update Container App '$Name' because it is not tagged as D1-owned." }
         Invoke-Az @('containerapp','identity','assign','--resource-group',$ResourceGroup,'--name',$Name,'--user-assigned',$IdentityResourceId,'--output','none') | Out-Null
         if ($SecretDefinitions.Count -gt 0) {
@@ -116,10 +128,18 @@ if ($account.tenantId -ne $TenantId) { throw 'Selected Azure account is not in t
 $foundation = Get-Content -LiteralPath $FoundationEvidencePath -Raw | ConvertFrom-Json
 $entra = Get-Content -LiteralPath $EntraEvidencePath -Raw | ConvertFrom-Json
 $images = @(Get-Content -LiteralPath $ImageManifestPath -Raw | ConvertFrom-Json)
+if (-not $PSBoundParameters.ContainsKey('ContainerAppsEnvironment')) { $ContainerAppsEnvironment = $foundation.ContainerAppsEnvironment }
 if ($foundation.SubscriptionId -ne $SubscriptionId -or $foundation.TenantId -ne $TenantId) { throw 'Foundation evidence does not match the selected subscription and tenant.' }
 if ($foundation.ResourceGroup -ne $ResourceGroup) { throw 'Resource group differs from foundation evidence. Pass the same D1 resource group.' }
 if ($foundation.ContainerAppsEnvironment -ne $ContainerAppsEnvironment) { throw 'Container Apps environment differs from foundation evidence. Pass the same D1 environment.' }
 if ($entra.TenantId -ne $TenantId) { throw 'Entra evidence does not match the requested tenant.' }
+$targetEnvironmentId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.App/managedEnvironments/$ContainerAppsEnvironment"
+$existingApps = @(Invoke-Az @('containerapp','list','--resource-group',$ResourceGroup,'--output','json') -Json)
+foreach ($app in $existingApps) {
+    if ($app.name -in @('invoice-api','invoice-worker','invoice-interactive','invoice-web')) {
+        Assert-ContainerAppEnvironment $app $targetEnvironmentId
+    }
+}
 foreach ($image in $images) {
     if (-not $image.DigestReference.StartsWith($foundation.AcrLoginServer + '/', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Image '$($image.Name)' was not built in the foundation ACR '$($foundation.AcrLoginServer)'."
@@ -177,10 +197,26 @@ Ensure-SecretReader $foundation.AutonomousManagedIdentity.PrincipalId $KeyVaultN
 Ensure-SecretReader $foundation.InteractiveManagedIdentity.PrincipalId $KeyVaultName 'database-connection-string'
 Ensure-SecretReader $foundation.WebManagedIdentity.PrincipalId $KeyVaultName 'web-client-secret'
 $environment = Invoke-Az @('containerapp','env','show','--resource-group',$ResourceGroup,'--name',$ContainerAppsEnvironment,'--output','json') -Json
-$egressIps = @($environment.properties.outboundIpAddresses -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-if ($egressIps.Count -eq 0) { throw 'Container Apps environment did not report outbound IP addresses; database firewall will not be opened.' }
+$egressAddresses = $ContainerAppsEgressIps
+if ($egressAddresses.Count -eq 0) {
+    $foundationEgressProperty = $foundation.PSObject.Properties['ContainerAppsEgressIps']
+    if ($foundationEgressProperty) { $egressAddresses = @($foundationEgressProperty.Value) }
+}
+if ($egressAddresses.Count -eq 0) {
+    $outboundProperty = $environment.properties.PSObject.Properties['outboundIpAddresses']
+    if ($outboundProperty) { $egressAddresses = @($outboundProperty.Value) }
+}
+$egressIps = @($egressAddresses | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique)
+if ($egressIps.Count -eq 0) {
+    throw 'Container Apps environment did not report outbound IP addresses. Pass -ContainerAppsEgressIps with verified outbound IPv4 addresses (for example, from a configured NAT gateway). The environment staticIp is an inbound address, not a verified egress address. Database firewall rules will not be changed.'
+}
 foreach ($ip in $egressIps) {
-    if ($ip -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') { throw "Unexpected Container Apps outbound IP '$ip'." }
+    $parsedEgressIp = $null
+    if ($ip -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$' -or -not [Net.IPAddress]::TryParse($ip, [ref]$parsedEgressIp) -or $parsedEgressIp.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) {
+        throw "Unexpected Container Apps outbound IPv4 address '$ip'. Database firewall rules will not be changed."
+    }
+}
+foreach ($ip in $egressIps) {
     $ruleName = 'd1ca-' + ($ip -replace '\.','-')
     $existingRule = Invoke-Az @('postgres','flexible-server','firewall-rule','list','--resource-group',$ResourceGroup,'--name',$PostgresServerName,'--query',"[?name=='$ruleName'].name | [0]",'--output','tsv')
     if ([string]::IsNullOrWhiteSpace($existingRule)) {
@@ -205,24 +241,24 @@ $apiDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaul
 $workerDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaultUri + 'secrets/database-connection-string,identityref:' + $foundation.AutonomousManagedIdentity.ResourceId
 $interactiveDatabaseSecret = 'database-connection=keyvaultref:' + $vault.properties.vaultUri + 'secrets/database-connection-string,identityref:' + $foundation.InteractiveManagedIdentity.ResourceId
 $webSecretReference = 'web-client-secret=keyvaultref:' + $vault.properties.vaultUri + 'secrets/web-client-secret,identityref:' + $foundation.WebManagedIdentity.ResourceId
-$common = @('DEMO_MODE=live','DATABASE_PROVIDER=PostgreSQL','DATABASE_CONNECTION_STRING=secretref:database-connection','TENANT_ID=' + $TenantId)
-$apiEnv = $common + @('INVOICE_API_CLIENT_ID=' + $entra.ApiApp.AppId,'INVOICE_API_AUDIENCE=' + $entra.ApiApp.IdentifierUri,'ASPNETCORE_ENVIRONMENT=Production')
-$workerEnv = $common + @('AUTONOMOUS_BLUEPRINT_CLIENT_ID=' + $entra.AutonomousBlueprint.AppId,
-    'AZURE_CLIENT_ID=' + $identity.ClientId,'ENTRY_AGENT_CLIENT_ID=' + $EntryAgentClientId,'APPROVAL_AGENT_CLIENT_ID=' + $ApprovalAgentClientId,
-    'INVOICE_API_CLIENT_ID=' + $entra.ApiApp.AppId,'INVOICE_API_AUDIENCE=' + $entra.ApiApp.IdentifierUri,
+$common = @('DEMO_MODE=live','DATABASE_PROVIDER=PostgreSQL','DATABASE_CONNECTION_STRING=secretref:database-connection',"TENANT_ID=$TenantId")
+$apiEnv = $common + @("INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",'ASPNETCORE_ENVIRONMENT=Production')
+$workerEnv = $common + @("AUTONOMOUS_BLUEPRINT_CLIENT_ID=$($entra.AutonomousBlueprint.AppId)",
+    "AZURE_CLIENT_ID=$($identity.ClientId)","ENTRY_AGENT_CLIENT_ID=$EntryAgentClientId","APPROVAL_AGENT_CLIENT_ID=$ApprovalAgentClientId",
+    "INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",
     'INVOICE_API_BASE_URL=http://invoice-api:8080/','ASPNETCORE_ENVIRONMENT=Production')
-$interactiveEnv = $common + @('INTERACTIVE_BLUEPRINT_CLIENT_ID=' + $entra.InteractiveBlueprint.AppId,
-    'INTERACTIVE_BLUEPRINT_AUDIENCE=api://' + $entra.InteractiveBlueprint.AppId,
-    'INTERACTIVE_AZURE_CLIENT_ID=' + $foundation.InteractiveManagedIdentity.ClientId,
-    'INTERACTIVE_AGENT_CLIENT_ID=' + $entra.InteractiveAgent.ClientId,
-    'INVOICE_CREATE_DELEGATED_SCOPE=' + $entra.ApiApp.IdentifierUri + '/Invoice.Create.Delegated',
-    'INVOICE_API_CLIENT_ID=' + $entra.ApiApp.AppId,'INVOICE_API_AUDIENCE=' + $entra.ApiApp.IdentifierUri,
+$interactiveEnv = $common + @("INTERACTIVE_BLUEPRINT_CLIENT_ID=$($entra.InteractiveBlueprint.AppId)",
+    "INTERACTIVE_BLUEPRINT_AUDIENCE=api://$($entra.InteractiveBlueprint.AppId)",
+    "INTERACTIVE_AZURE_CLIENT_ID=$($foundation.InteractiveManagedIdentity.ClientId)",
+    "INTERACTIVE_AGENT_CLIENT_ID=$($entra.InteractiveAgent.ClientId)",
+    "INVOICE_CREATE_DELEGATED_SCOPE=$($entra.ApiApp.IdentifierUri)/Invoice.Create.Delegated",
+    "INVOICE_API_CLIENT_ID=$($entra.ApiApp.AppId)","INVOICE_API_AUDIENCE=$($entra.ApiApp.IdentifierUri)",
     'INVOICE_API_BASE_URL=http://invoice-api:8080/','ASPNETCORE_ENVIRONMENT=Production')
 $publicHost = if ($WebPublicHost) { $WebPublicHost } else { 'invoice-web.' + $foundation.ContainerAppsEnvironmentDomain }
-$webEnv = @('DEMO_MODE=live','WEB_CLIENT_ID=' + $entra.WebClient.AppId,'WEB_CLIENT_SECRET=secretref:web-client-secret',
-    'TENANT_ID=' + $TenantId,'INTERACTIVE_BLUEPRINT_ACCESS_SCOPE=api://' + $entra.InteractiveBlueprint.AppId + '/access_as_user',
-    'WEB_PUBLIC_HOST=' + $publicHost,
-    'INVOICE_CREATE_DELEGATED_SCOPE=' + $entra.ApiApp.IdentifierUri + '/Invoice.Create.Delegated',
+$webEnv = @('DEMO_MODE=live',"WEB_CLIENT_ID=$($entra.WebClient.AppId)",'WEB_CLIENT_SECRET=secretref:web-client-secret',
+    "TENANT_ID=$TenantId","INTERACTIVE_BLUEPRINT_ACCESS_SCOPE=api://$($entra.InteractiveBlueprint.AppId)/access_as_user",
+    "WEB_PUBLIC_HOST=$publicHost",
+    "INVOICE_CREATE_DELEGATED_SCOPE=$($entra.ApiApp.IdentifierUri)/Invoice.Create.Delegated",
     'INVOICE_INTERACTIVE_API_BASE_URL=http://invoice-interactive:8080/','INVOICE_WORKER_BASE_URL=http://invoice-worker:8080/',
     'ASPNETCORE_ENVIRONMENT=Production')
 $acrLoginServer = $foundation.AcrLoginServer
