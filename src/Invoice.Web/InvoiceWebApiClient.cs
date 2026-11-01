@@ -12,6 +12,7 @@ public interface IInvoiceWebApiClient
     Task<InteractiveInvoiceResult> SubmitAsync(CreateInvoiceRequest request, ClaimsPrincipal user, CancellationToken cancellationToken);
     Task<IReadOnlyList<InvoiceResponse>> ListMineAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
     Task<InvoiceDemoRunResult> RunAutonomousAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
+    Task<InvoiceDemoRunResult> ApprovePendingAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
     Task<InvoiceDemoRunResult> RunNegativeTestsAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
 }
 
@@ -35,6 +36,9 @@ public sealed class InvoiceWebApiClient(
 
     public Task<InvoiceDemoRunResult> RunAutonomousAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
         => SendWorkerAsync<InvoiceDemoRunResult>("/api/demo/runs/autonomous", user, cancellationToken);
+
+    public Task<InvoiceDemoRunResult> ApprovePendingAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
+        => SendWorkerAsync<InvoiceDemoRunResult>("/api/demo/invoices/approve-pending", user, cancellationToken);
 
     public Task<InvoiceDemoRunResult> RunNegativeTestsAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
         => SendWorkerAsync<InvoiceDemoRunResult>("/api/demo/runs/negative-tests", user, cancellationToken);

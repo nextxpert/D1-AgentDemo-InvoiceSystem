@@ -10,7 +10,7 @@
             <a href="/">Overview</a>
             <a href="/invoices/new">New invoice</a>
             <AuthorizeView>
-                <Authorized><a href="@(OperatingSystem.IsBrowser() ? "/sign-out" : "/dev/sign-out")">Sign out</a></Authorized>
+                <Authorized><a href="/sign-out">Sign out</a></Authorized>
             </AuthorizeView>
         </nav>
     </header>

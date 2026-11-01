@@ -70,6 +70,8 @@ code { display: inline-block; padding: 5px 8px; border-radius: 5px; background: 
 .line-heading h2 { margin-bottom: 4px; }
 .input-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
 .action-row { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.demo-control .section-heading { flex-wrap: wrap; }
+.demo-control .action-row { flex-wrap: wrap; margin-top: 0; }
 .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 5px; background: white; color: var(--red); font-size: 20px; cursor: pointer; }
 .validation-message,.validation-errors { color: var(--red); font-size: 12px; }
 .validation-errors { margin-bottom: 16px; }

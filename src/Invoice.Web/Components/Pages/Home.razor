@@ -57,13 +57,26 @@
 
     <section class="content-band demo-control">
         <div class="section-heading"><div><p class="eyebrow">DEMO CONTROL</p><h2>Run autonomous team</h2><p class="muted">The worker uses separate Entry and Approval identities; this signed-in user only triggers the run.</p></div>
-            <button class="button primary" @onclick="RunAutonomous" disabled="@Running">@(Running ? "Running…" : "Run autonomous flow")</button></div>
+            <div class="action-row"><button class="button primary" @onclick="RunAutonomous" disabled="@Running">Run autonomous flow</button><button class="button secondary" @onclick="ApprovePending" disabled="@Running">Approve pending invoices</button><button class="button secondary" @onclick="RunNegativeTests" disabled="@Running">Test permission boundaries</button></div></div>
         @if (LatestRun is not null)
         {
-            <div class="run-summary"><strong>@LatestRun.Status</strong><span>Correlation @LatestRun.CorrelationId</span><span>@LatestRun.Invoices.Count generated</span><span>@LatestRun.Decisions.Count decisions</span></div>
+            <div class="run-summary"><strong>@LatestRun.Status</strong><span>Mode @LatestRun.Mode</span><span>Correlation @LatestRun.CorrelationId</span><span>@LatestRun.Invoices.Count invoices</span><span>@LatestRun.Decisions.Count decisions</span></div>
+            @if (!string.IsNullOrWhiteSpace(LatestRun.Error))
+            {
+                <div class="status-message error">@LatestRun.Error</div>
+            }
             @foreach (var execution in LatestRun.Executions)
             {
-                <div class="execution-row"><strong>@execution.AgentName</strong><span>@execution.Operation</span><span>@execution.Outcome</span><code>@string.Join(", ", execution.Claims.Roles.Concat(execution.Claims.Scopes))</code></div>
+                <div class="execution-row"><strong>@execution.AgentName</strong><span>@execution.Operation</span><span>@execution.Outcome</span><code>@string.Join(", ", execution.Claims.Roles.Concat(execution.Claims.Scopes))</code><span>@execution.Detail</span></div>
+            }
+            @if (LatestRun.Invoices.Count > 0)
+            {
+                <div class="table-scroll"><table class="invoice-table"><thead><tr><th>Invoice</th><th>Supplier</th><th>Total</th><th>Status</th><th>Disposition</th><th>Decision reason</th></tr></thead><tbody>
+                    @foreach (var invoice in LatestRun.Invoices)
+                    {
+                        <tr><td><strong>@invoice.InvoiceNumber</strong><small>@invoice.PurchaseOrderNumber</small></td><td>@invoice.SupplierName</td><td>@invoice.Currency @invoice.TotalAmount.ToString("N2")</td><td><span class="status-badge">@invoice.Status</span></td><td>@invoice.Disposition</td><td>@string.Join("; ", LatestRun.Decisions.Where(decision => decision.InvoiceId == invoice.Id).Select(decision => decision.Reason))</td></tr>
+                    }
+                </tbody></table></div>
             }
         }
     </section>
@@ -97,19 +110,25 @@
         finally { Loading = false; }
     }
 
-    private async Task RunAutonomous()
+    private Task RunAutonomous() => RunDemo(InvoiceApi.RunAutonomousAsync);
+
+    private Task ApprovePending() => RunDemo(InvoiceApi.ApprovePendingAsync);
+
+    private Task RunNegativeTests() => RunDemo(InvoiceApi.RunNegativeTestsAsync);
+
+    private async Task RunDemo(Func<ClaimsPrincipal, CancellationToken, Task<InvoiceDemoRunResult>> operation)
     {
         Running = true;
         Error = null;
         try
         {
             var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-            LatestRun = await InvoiceApi.RunAutonomousAsync(state.User, CancellationToken.None);
+            LatestRun = await operation(state.User, CancellationToken.None);
             await Refresh();
         }
         catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {
-            Error = "The autonomous demo run was denied. Check the InvoiceSubmitter role and delegated trigger scope.";
+            Error = "The demo run was denied. Check the InvoiceSubmitter role and delegated trigger scope.";
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { Running = false; }

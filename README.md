@@ -26,6 +26,12 @@ The full .NET solution builds and the test suite is green with .NET 10, includin
 
 Run the automated local offline smoke with `pwsh -File ./Run-D1OfflineDemo.ps1`; it verifies all four services, five generated invoices, the two agent-role denials, and the interactive no-role 403.
 
+## Online demo
+
+Open the deployed **Web app root URL** to show invoices, and append `/invoices/new` to use the interactive assistant. Retrieve the actual `WebUrl` from `deploy/azure/evidence/container-app-deployment.json`, or use **invoice-web > Overview > Application URL** in Azure portal. The API and worker URLs are not invoice pages.
+
+Follow the [complete online walkthrough](docs/invoice-demo-live-script.md): sign in, run the autonomous team, preview and submit a user invoice, approve pending invoices through the Approval Agent, and test agent/user permission boundaries. The dashboard separates the user's invoice workspace from the latest autonomous run's invoice results. Rebuild and deploy the changed Web/Worker images before using the new controls online.
+
 ## Identity story
 
 The two autonomous agents share the worker runtime and managed-identity credential boundary, so they share one autonomous blueprint. They remain separate identities because they need independent authorization and attribution. The interactive assistant has a separate blueprint and signed-in user context; it is not an Agent User and has no approval capability.

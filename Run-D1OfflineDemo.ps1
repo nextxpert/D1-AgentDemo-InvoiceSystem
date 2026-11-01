@@ -81,10 +81,59 @@ try {
         INVOICE_WORKER_BASE_URL='http://127.0.0.1:5081/'
     }
     Wait-D1Health $web 'Web UI' 'http://127.0.0.1:5083/healthz'
+    foreach ($asset in @('app.css', '_framework/blazor.web.js')) {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:5083/$asset" -TimeoutSec 10 -SkipHttpErrorCheck
+        if ($response.StatusCode -ne 200) { throw "Web asset $asset failed to load: HTTP $($response.StatusCode)." }
+    }
 
     $autonomous = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5081/api/demo/runs/autonomous' -TimeoutSec 120
     if ($autonomous.status -ne 'Succeeded' -or $autonomous.invoices.Count -lt 1) {
         throw "Autonomous offline run did not succeed: status=$($autonomous.status), invoices=$($autonomous.invoices.Count), error=$($autonomous.error)"
+    }
+    foreach ($decision in $autonomous.decisions) {
+        $invoice = $autonomous.invoices | Where-Object id -eq $decision.invoiceId
+        $expectedStatus = switch ($decision.disposition) {
+            'Approved' { 'ApprovedForPayment' }
+            'Rejected' { 'Rejected' }
+            'ManualReviewRequired' { 'PendingApproval' }
+        }
+        if ($invoice.status -ne $expectedStatus -or $invoice.disposition -ne $decision.disposition) {
+            throw 'Autonomous run returned a stale invoice snapshot after its decision.'
+        }
+    }
+
+    $actorHeaders = @{ 'X-Demo-Actor'='interactive' }
+    $interactiveInvoices = @()
+    foreach ($unitPrice in @(50, 6000)) {
+        $request = @{
+            invoiceNumber='INV-NWS-' + [guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant()
+            purchaseOrderNumber='PO-DEMO-' + [guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant()
+            supplierId='NWS'; currency='EUR'; costCenter='FIN-100'; description='Fictional office supplies invoice'
+            invoiceDate=[DateTime]::UtcNow.ToString('yyyy-MM-dd'); dueDate=[DateTime]::UtcNow.AddDays(30).ToString('yyyy-MM-dd')
+            lines=@(@{ description='Fictional office supplies'; quantity=2; unitPrice=$unitPrice; taxRate=$(if ($unitPrice -eq 50) { 0.2 } else { 0 }) })
+        } | ConvertTo-Json -Depth 5
+        $before = Invoke-RestMethod -Uri 'http://127.0.0.1:5082/interactive/invoices/mine' -Headers $actorHeaders
+        $preview = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5082/interactive/invoices/preview' -Headers $actorHeaders -ContentType 'application/json' -Body $request
+        $expectedTotal = if ($unitPrice -eq 50) { 120 } else { 12000 }
+        if ($preview.invoice.totalAmount -ne $expectedTotal) { throw 'Interactive preview total did not match the example.' }
+        $after = Invoke-RestMethod -Uri 'http://127.0.0.1:5082/interactive/invoices/mine' -Headers $actorHeaders
+        if ($before.Count -ne $after.Count) { throw 'Interactive preview unexpectedly persisted an invoice.' }
+        $submitted = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5082/interactive/invoices/submit' -Headers $actorHeaders -ContentType 'application/json' -Body $request
+        if ($submitted.invoice.status -ne 'PendingApproval') { throw 'Interactive submission did not enter PendingApproval.' }
+        $interactiveInvoices += $submitted.invoice
+    }
+    $approval = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5081/api/demo/invoices/approve-pending' -TimeoutSec 120
+    if ($approval.status -ne 'Succeeded') { throw 'Approval of interactive invoices failed.' }
+    $mine = Invoke-RestMethod -Uri 'http://127.0.0.1:5082/interactive/invoices/mine' -Headers $actorHeaders
+    foreach ($index in 0..1) {
+        $expectedStatus = if ($index -eq 0) { 'ApprovedForPayment' } else { 'PendingApproval' }
+        $expectedDisposition = if ($index -eq 0) { 'Approved' } else { 'ManualReviewRequired' }
+        foreach ($invoices in @($approval.invoices, $mine)) {
+            $invoice = $invoices | Where-Object id -eq $interactiveInvoices[$index].id
+            if ($invoice.status -ne $expectedStatus -or $invoice.disposition -ne $expectedDisposition) {
+                throw 'Interactive invoice approval/manual-review result did not match the run and user workspace.'
+            }
+        }
     }
 
     $negative = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5081/api/demo/runs/negative-tests' -TimeoutSec 60
@@ -99,6 +148,8 @@ try {
     [pscustomobject]@{
         ApiHealth='healthy'; WorkerHealth='healthy'; InteractiveHealth='healthy'; WebHealth='healthy'
         AutonomousRun=$autonomous.status; GeneratedInvoiceCount=$autonomous.invoices.Count
+        InteractiveSubmissionCount=$interactiveInvoices.Count; InteractiveApproval=$approval.status
+        ManualReviewStatus='PendingApproval / ManualReviewRequired'
         WrongRoleRun=$negative.status; WrongRoleDeniedCount=@($negative.executions | Where-Object outcome -eq 'Denied').Count
         InteractiveNoRoleStatus=$noRole.StatusCode
         WebUrl='http://127.0.0.1:5083/'

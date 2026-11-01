@@ -259,7 +259,7 @@ public sealed class InvoiceDemoOrchestrator(
 
         var finished = timeProvider.GetUtcNow();
         var resultRun = new InvoiceDemoRunResult(id, correlationId, "Autonomous", options.Offline ? "offline" : "live",
-            status, started, finished, invoices, decisions, executions, error);
+            status, started, finished, ApplyDecisions(invoices, decisions), decisions, executions, error);
         var safeSummary = JsonSerializer.Serialize(resultRun, JsonOptions);
         await runs.AddAsync(new DemoRunSnapshot(id, correlationId, resultRun.Mode, status, safeSummary, started, finished), cancellationToken);
         return resultRun;
@@ -296,6 +296,22 @@ public sealed class InvoiceDemoOrchestrator(
             status == "Succeeded" ? null : "One or more wrong-role operations were not denied.", cancellationToken);
     }
 
+    private static IReadOnlyList<InvoiceResponse> ApplyDecisions(
+        IReadOnlyList<InvoiceResponse> invoices, IReadOnlyList<ApprovalDecisionResponse> decisions)
+        => invoices.Select(invoice => decisions.LastOrDefault(decision => decision.InvoiceId == invoice.Id) is { } decision
+            ? invoice with
+            {
+                Status = decision.Disposition switch
+                {
+                    "Approved" => "ApprovedForPayment",
+                    "Rejected" => "Rejected",
+                    _ => invoice.Status
+                },
+                Disposition = decision.Disposition,
+                ManualReviewReason = decision.Disposition == "ManualReviewRequired" ? decision.Reason : invoice.ManualReviewReason
+            }
+            : invoice).ToArray();
+
     private async Task<InvoiceDemoRunResult> PersistRunAsync(
         Guid id,
         string correlationId,
@@ -310,7 +326,7 @@ public sealed class InvoiceDemoOrchestrator(
     {
         var finished = timeProvider.GetUtcNow();
         var result = new InvoiceDemoRunResult(id, correlationId, stage, options.Offline ? "offline" : "live",
-            status, started, finished, invoices, decisions, executions, error);
+            status, started, finished, ApplyDecisions(invoices, decisions), decisions, executions, error);
         var safeSummary = JsonSerializer.Serialize(result, JsonOptions);
         await runs.AddAsync(new DemoRunSnapshot(id, correlationId, result.Mode, status, safeSummary, started, finished), cancellationToken);
         return result;

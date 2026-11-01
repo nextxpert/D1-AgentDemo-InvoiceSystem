@@ -131,6 +131,7 @@ app.MapGet("/sign-out", async (HttpContext context) =>
         [CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme]);
 });
 app.MapGet("/healthz", () => Results.Ok(new { status = "healthy" }));
+app.MapStaticAssets();
 app.MapRazorComponents<D1.Invoice.Web.Components.App>().AddInteractiveServerRenderMode();
 await app.RunAsync();
 return 0;
