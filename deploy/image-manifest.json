@@ -13,9 +13,9 @@
   },
   {
     "Name": "interactive",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive:7031df03722f",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive@sha256:e1c2375acbf348f150262bcc835804f406873ca5244ed2fa295bddb9ecbdaefc",
-    "Digest": "sha256:e1c2375acbf348f150262bcc835804f406873ca5244ed2fa295bddb9ecbdaefc"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive:obo-user-fix-20261102",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive@sha256:214593a5905c1cd119125a4b7ec55cb5d359692763e5478e78107276e7c6509e",
+    "Digest": "sha256:214593a5905c1cd119125a4b7ec55cb5d359692763e5478e78107276e7c6509e"
   },
   {
     "Name": "web",

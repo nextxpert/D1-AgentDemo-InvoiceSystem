@@ -22,7 +22,7 @@ The API requires `Invoice.Create.Delegated` plus `InvoiceSubmitter` and the inte
 
 - Autonomous token flow uses `Microsoft.Identity.Web.AgentIdentities`, `WithAgentIdentity`, `IAuthorizationHeaderProvider`, and managed identity plus FIC. The agent identity ID is the Agent Identity app/client ID, not its service-principal object ID.
 - Interactive flow receives a user token whose audience is the interactive blueprint. The Interactive API calls `CreateAuthorizationHeaderForUserAsync` with the signed-in `ClaimsPrincipal` and `WithAgentIdentity(interactiveAgentId)` to perform OBO.
-- The OBO downstream token must retain the signed-in user as `sub`; the agent actor is captured from the documented claim where present. The API refuses a missing actor context for delegated create.
+- The OBO downstream token must represent the signed-in user; the agent actor is captured from the documented claim where present. Entra `sub` is audience-specific and need not be identical between the Interactive blueprint and Invoice API tokens. The Interactive service verifies the same user using matching non-empty `oid` and `tid` claims, while retaining each token's actual subject in safe evidence. The API refuses a missing actor context for delegated create.
 - The Web OIDC client secret is supplied only through secure runtime configuration (`WEB_CLIENT_SECRET`) and is never committed. Production should use a managed certificate/Key Vault-backed credential where configured and supported.
 - Offline mode uses explicit fake identities/headers in Development only. Production refuses offline mode.
 - Safe claims are parsed from token payload into a small allow-listed DTO. The raw token/header is never serialized, logged, persisted, or returned.

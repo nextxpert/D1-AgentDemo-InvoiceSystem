@@ -31,7 +31,7 @@ public sealed class InteractiveInvoiceService(
         var scope = configuration["INVOICE_CREATE_DELEGATED_SCOPE"] ?? throw new InvalidOperationException("INVOICE_CREATE_DELEGATED_SCOPE is missing.");
         var authorization = await GetUserAuthorizationAsync(agentId, scope, signedInUser, cancellationToken);
         var claims = authorization.Claims;
-        EnsureUserSubject(userId, claims);
+        EnsureUserIdentity(signedInUser, claims);
 
         var correlationId = ActivityTraceId.CreateRandom().ToString();
         using var previewRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/invoices/preview")
@@ -56,7 +56,7 @@ public sealed class InteractiveInvoiceService(
         var createScope = configuration["INVOICE_CREATE_DELEGATED_SCOPE"] ?? throw new InvalidOperationException("INVOICE_CREATE_DELEGATED_SCOPE is missing.");
         var authorization = await GetUserAuthorizationAsync(agentId, createScope, signedInUser, cancellationToken);
         var claims = authorization.Claims;
-        EnsureUserSubject(userId, claims);
+        EnsureUserIdentity(signedInUser, claims);
 
         var correlationId = ActivityTraceId.CreateRandom().ToString();
         var client = CreateClient();
@@ -90,7 +90,7 @@ public sealed class InteractiveInvoiceService(
         var agentId = configuration["INTERACTIVE_AGENT_CLIENT_ID"] ?? throw new InvalidOperationException("INTERACTIVE_AGENT_CLIENT_ID is missing.");
         var readScope = configuration["INVOICE_CREATE_DELEGATED_SCOPE"] ?? throw new InvalidOperationException("INVOICE_CREATE_DELEGATED_SCOPE is missing.");
         var authorization = await GetUserAuthorizationAsync(agentId, readScope, signedInUser, cancellationToken);
-        EnsureUserSubject(userId, authorization.Claims);
+        EnsureUserIdentity(signedInUser, authorization.Claims);
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/invoices");
         AddHeaders(request, authorization.Header, authorization.OfflineActor, ActivityTraceId.CreateRandom().ToString());
         using var response = await CreateClient().SendAsync(request, cancellationToken);
@@ -131,10 +131,24 @@ public sealed class InteractiveInvoiceService(
             ?? throw new UnauthorizedAccessException("The signed-in user has no stable subject identifier.");
     }
 
-    private static void EnsureUserSubject(string userId, SafeIdentitySummary claims)
+    private void EnsureUserIdentity(ClaimsPrincipal user, SafeIdentitySummary claims)
     {
-        if (!string.Equals(claims.Subject, userId, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("OBO token subject does not match the signed-in user.");
+        if (string.Equals(configuration["DEMO_MODE"], "offline", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(claims.Subject, RequireSignedInUser(user), StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("Offline token subject does not match the signed-in user.");
+            return;
+        }
+
+        var objectId = user.FindFirst("oid")?.Value
+            ?? user.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
+        var tenantId = user.FindFirst("tid")?.Value
+            ?? user.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid")?.Value;
+        if (!Guid.TryParse(objectId, out var userObjectId) || userObjectId == Guid.Empty ||
+            !Guid.TryParse(tenantId, out var userTenantId) || userTenantId == Guid.Empty ||
+            !Guid.TryParse(claims.ObjectId, out var tokenObjectId) || tokenObjectId != userObjectId ||
+            !Guid.TryParse(claims.TenantId, out var tokenTenantId) || tokenTenantId != userTenantId)
+            throw new UnauthorizedAccessException("OBO token user or tenant does not match the signed-in user.");
     }
 
     private static void AddHeaders(HttpRequestMessage request, string? authorizationHeader, string offlineActor, string correlationId)

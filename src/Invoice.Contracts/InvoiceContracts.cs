@@ -39,4 +39,5 @@ public sealed record SafeIdentitySummary(
     IReadOnlyList<string> Scopes,
     string? ParentBlueprintClientId,
     DateTimeOffset? IssuedAtUtc,
-    DateTimeOffset? ExpiresAtUtc);
+    DateTimeOffset? ExpiresAtUtc,
+    string? ObjectId = null);

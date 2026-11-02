@@ -78,7 +78,8 @@ public static class SafeIdentityClaimReader
             Scopes: (String(root, "scp") ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries),
             ParentBlueprintClientId: String(root, "xms_par_app_azp"),
             IssuedAtUtc: UnixTime(root, "iat"),
-            ExpiresAtUtc: UnixTime(root, "exp"));
+            ExpiresAtUtc: UnixTime(root, "exp"),
+            ObjectId: String(root, "oid"));
     }
 
     private static byte[] DecodeBase64Url(string value)

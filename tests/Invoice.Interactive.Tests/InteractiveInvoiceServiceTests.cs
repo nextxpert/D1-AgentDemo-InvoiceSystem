@@ -14,6 +14,9 @@ namespace D1.Invoice.Interactive.Tests;
 
 public sealed class InteractiveInvoiceServiceTests
 {
+    private const string UserObjectId = "11111111-1111-1111-1111-111111111111";
+    private const string TenantId = "22222222-2222-2222-2222-222222222222";
+
     [Fact]
     public async Task SubmitRequiresAuthenticatedUser()
     {
@@ -29,7 +32,9 @@ public sealed class InteractiveInvoiceServiceTests
     public async Task SubmitUsesSignedInPrincipalForOBOAndReturnsOnlySafeClaims()
     {
         var user = new ClaimsPrincipal(new ClaimsIdentity([
-            new Claim("sub", "user-1001"),
+            new Claim("sub", "blueprint-user-subject"),
+            new Claim("oid", UserObjectId),
+            new Claim("tid", TenantId),
             new Claim("name", "Demo User"),
             new Claim("roles", "InvoiceSubmitter")
         ], "test"));
@@ -42,10 +47,66 @@ public sealed class InteractiveInvoiceServiceTests
         Assert.Same(user, auth.UserPrincipal);
         Assert.Equal("api://invoice-api/Invoice.Create.Delegated", Assert.Single(auth.Scopes));
         Assert.Equal("user-1001", result.Claims.Subject);
+        Assert.Equal(UserObjectId, result.Claims.ObjectId);
+        Assert.Equal(TenantId, result.Claims.TenantId);
         Assert.Equal("interactive-agent-1", result.Claims.Actor);
         Assert.Equal("Succeeded", result.Result);
         Assert.Equal(2, handler.Requests.Count);
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Authorization?.Scheme));
+    }
+
+    [Theory]
+    [InlineData("oid", "tid")]
+    [InlineData("http://schemas.microsoft.com/identity/claims/objectidentifier", "http://schemas.microsoft.com/identity/claims/tenantid")]
+    public async Task ListAllowsAudienceSpecificSubjectsForSameTenantUser(string objectClaim, string tenantClaim)
+    {
+        var user = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim("sub", "blueprint-user-subject"), new Claim(objectClaim, UserObjectId), new Claim(tenantClaim, TenantId)
+        ], "test"));
+        var auth = new RecordingAuthorizationHeaderProvider(CreateHeader("invoice-api-user-subject"));
+        var handler = new ResponseHandler();
+        var service = CreateService(auth, handler);
+
+        var result = await service.ListMineAsync(user, CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal("/v1/invoices", Assert.Single(handler.Requests).Path);
+    }
+
+    [Theory]
+    [InlineData("", TenantId)]
+    [InlineData(UserObjectId, "")]
+    public async Task MissingSignedInTenantUserIsDenied(string objectId, string tenantId)
+    {
+        var user = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim("sub", "same-subject"), new Claim("oid", objectId), new Claim("tid", tenantId)
+        ], "test"));
+        var auth = new RecordingAuthorizationHeaderProvider(CreateHeader("same-subject"));
+        var handler = new ResponseHandler();
+        var service = CreateService(auth, handler);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ListMineAsync(user, CancellationToken.None));
+        Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("33333333-3333-3333-3333-333333333333", TenantId)]
+    [InlineData(UserObjectId, "33333333-3333-3333-3333-333333333333")]
+    [InlineData("", TenantId)]
+    [InlineData(UserObjectId, "")]
+    public async Task MismatchedOrMissingOBOIdentityIsDeniedBeforeApiCalls(string objectId, string tenantId)
+    {
+        var user = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim("sub", "same-subject"), new Claim("oid", UserObjectId), new Claim("tid", TenantId)
+        ], "test"));
+        var auth = new RecordingAuthorizationHeaderProvider(CreateHeader("same-subject", objectId, tenantId));
+        var handler = new ResponseHandler();
+        var service = CreateService(auth, handler);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.PreviewAsync(Request(), user, CancellationToken.None));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SubmitAsync(Request(), user, CancellationToken.None));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ListMineAsync(user, CancellationToken.None));
+        Assert.Empty(handler.Requests);
     }
 
     private static IInteractiveInvoiceService CreateService(RecordingAuthorizationHeaderProvider auth, HttpMessageHandler handler)
@@ -64,9 +125,9 @@ public sealed class InteractiveInvoiceServiceTests
         => new("INV-NWS-INTER1", "PO-INT-001", "NWS", new DateOnly(2026, 10, 1), new DateOnly(2026, 11, 1),
             "EUR", "Fictional invoice", "FIN-100", [new InvoiceLineRequest("Paper", 1, 50, .2m)]);
 
-    private static string CreateHeader(string subject)
+    private static string CreateHeader(string subject, string objectId = UserObjectId, string tenantId = TenantId)
     {
-        var payload = $$"""{"sub":"{{subject}}","act":{"sub":"interactive-agent-1"},"aud":"api://invoice-api","tid":"tenant-1","azp":"interactive-agent-1","scp":"Invoice.Create.Delegated"}""";
+        var payload = $$"""{"sub":"{{subject}}","oid":"{{objectId}}","act":{"sub":"interactive-agent-1"},"aud":"api://invoice-api","tid":"{{tenantId}}","azp":"interactive-agent-1","scp":"Invoice.Create.Delegated"}""";
         return $"Bearer eyJhbGciOiJub25lIn0.{Base64Url(Encoding.UTF8.GetBytes(payload))}.";
     }
 
@@ -115,6 +176,11 @@ public sealed class InteractiveInvoiceServiceTests
                 "INV-NWS-INTER1", "PO-INT-001", "Northwind Office Supplies", 60m, "EUR",
                 request.RequestUri.AbsolutePath.EndsWith("submit", StringComparison.Ordinal) ? "PendingApproval" : "Draft",
                 "Pending", null, "correlation-test");
+            if (request.Method == HttpMethod.Get)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = System.Net.Http.Json.JsonContent.Create(new[] { invoice })
+                });
             return Task.FromResult(new HttpResponseMessage(request.RequestUri.AbsolutePath.EndsWith("submit", StringComparison.Ordinal)
                 ? HttpStatusCode.OK
                 : HttpStatusCode.Created)

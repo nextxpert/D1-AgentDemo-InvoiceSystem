@@ -33,7 +33,7 @@ Entry should carry only `Invoice.Create.All`. Approval should carry only `Invoic
 3. Confirm the interactive blueprint has an enabled `access_as_user` scope and preauthorizes the Web client as required by the tenant configuration.
 4. Confirm `Invoice.Interactive` validates the user token against the blueprint audience and uses the separate Interactive API UAMI/FIC.
 5. Confirm the interactive Agent Identity has delegated consent for `Invoice.Create.Delegated` on the Invoice API.
-6. Verify the downstream token subject is the signed-in user and agent context is present; if not, stop and inspect the Microsoft.Identity.Web OBO setup. Never substitute a synthetic actor for live validation.
+6. Verify the downstream token represents the signed-in user using matching `oid` and `tid`, and verify agent context is present. Entra `sub` is audience-specific, so comparing subjects from the Interactive blueprint and Invoice API can incorrectly reject valid OBO tokens. If logs say "OBO token subject does not match the signed-in user", deploy the corrected Interactive image; do not remove the identity check. Missing or mismatched tenant/object IDs must remain denied. Never substitute a synthetic actor for live validation.
 7. Check `InvoiceSubmitter` is present on the downstream delegated token/user authorization path. The API makes the final decision.
 
 ## Database and invoice behavior
