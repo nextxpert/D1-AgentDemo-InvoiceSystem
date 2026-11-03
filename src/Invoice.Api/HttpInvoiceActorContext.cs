@@ -41,19 +41,29 @@ public sealed class HttpInvoiceActorContext(IHttpContextAccessor accessor) : IAc
     public static string? GetAgentActor(ClaimsPrincipal principal)
     {
         var actor = principal.FindFirstValue("act");
-        if (string.IsNullOrWhiteSpace(actor)) return principal.FindFirstValue("xms_agent");
-        if (!actor.StartsWith('{')) return actor;
-        try
+        if (string.IsNullOrWhiteSpace(actor)) actor = principal.FindFirstValue("xms_agent");
+        if (!string.IsNullOrWhiteSpace(actor))
         {
-            using var document = JsonDocument.Parse(actor);
-            var root = document.RootElement;
-            return root.TryGetProperty("sub", out var sub) ? sub.GetString()
-                : root.TryGetProperty("oid", out var oid) ? oid.GetString()
-                : actor;
+            if (!actor.StartsWith('{')) return actor;
+            try
+            {
+                using var document = JsonDocument.Parse(actor);
+                var root = document.RootElement;
+                return root.TryGetProperty("sub", out var sub) ? sub.GetString()
+                    : root.TryGetProperty("oid", out var oid) ? oid.GetString()
+                    : actor;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
-        catch (JsonException)
-        {
-            return null;
-        }
+
+        var isAgentIdentity = principal.FindAll("xms_act_fct")
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Contains("11", StringComparer.Ordinal);
+        if (!isAgentIdentity) return null;
+
+        return principal.FindFirstValue("azp") ?? principal.FindFirstValue("appid");
     }
 }

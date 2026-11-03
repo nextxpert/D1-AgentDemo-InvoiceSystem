@@ -116,10 +116,16 @@ public static class SafeIdentityClaimReader
 
     private static string? Actor(JsonElement root)
     {
-        if (!root.TryGetProperty("act", out var value)) return null;
-        if (value.ValueKind == JsonValueKind.String) return value.GetString();
-        if (value.ValueKind == JsonValueKind.Object) return String(value, "sub") ?? String(value, "oid");
-        return null;
+        if (root.TryGetProperty("act", out var value))
+        {
+            if (value.ValueKind == JsonValueKind.String) return value.GetString();
+            if (value.ValueKind == JsonValueKind.Object) return String(value, "sub") ?? String(value, "oid");
+        }
+
+        var isAgentIdentity = (String(root, "xms_act_fct") ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Contains("11", StringComparer.Ordinal);
+        return isAgentIdentity ? String(root, "azp") ?? String(root, "appid") : null;
     }
 
     private static DateTimeOffset? UnixTime(JsonElement root, string property)

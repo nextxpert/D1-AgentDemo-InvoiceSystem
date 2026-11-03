@@ -99,6 +99,26 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    await next();
+    if (context.Response.StatusCode != StatusCodes.Status403Forbidden ||
+        context.Request.Method != HttpMethods.Post ||
+        (context.Request.Path != "/v1/invoices/preview" && context.Request.Path != "/v1/invoices"))
+        return;
+
+    var user = context.User;
+    var hasAgentIdentityFacet = user.FindAll("xms_act_fct")
+        .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        .Contains("11", StringComparer.Ordinal);
+    app.Logger.LogWarning(
+        "Invoice create authorization denied HasDelegatedScope={HasDelegatedScope} HasSubmitterRole={HasSubmitterRole} HasAgentActor={HasAgentActor} HasAgentIdentityFacet={HasAgentIdentityFacet} HasAuthorizedParty={HasAuthorizedParty}",
+        HttpInvoiceActorContext.HasScope(user, "Invoice.Create.Delegated"),
+        HasRole(user, "InvoiceSubmitter"),
+        HttpInvoiceActorContext.GetAgentActor(user) is not null,
+        hasAgentIdentityFacet,
+        !string.IsNullOrWhiteSpace(user.FindFirstValue("azp") ?? user.FindFirstValue("appid")));
+});
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))

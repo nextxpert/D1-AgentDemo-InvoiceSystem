@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using D1.Invoice.Api;
 using D1.Invoice.Contracts;
 using Xunit;
 
@@ -7,6 +9,27 @@ namespace D1.Invoice.Api.Tests;
 
 public sealed class InvoiceAuthorizationTests
 {
+    [Fact]
+    public void AgentIdentityFacetUsesAuthorizedPartyAsActor()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("azp", "interactive-agent-client-id"),
+            new Claim("xms_act_fct", "3 9 11")
+        ], "Bearer"));
+
+        Assert.Equal("interactive-agent-client-id", HttpInvoiceActorContext.GetAgentActor(principal));
+    }
+
+    [Fact]
+    public void OrdinaryDelegatedClientIsNotAcceptedAsAgentActor()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [new Claim("azp", "ordinary-client-id")], "Bearer"));
+
+        Assert.Null(HttpInvoiceActorContext.GetAgentActor(principal));
+    }
+
     [Fact]
     public async Task EntryCanCreateAndSubmitButCannotApprove()
     {

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using D1.Invoice.Identity;
 using Microsoft.Identity.Abstractions;
 using Xunit;
@@ -21,6 +22,19 @@ public sealed class InvoiceAgentTokenProviderTests
         Assert.NotEmpty(headerProvider.Options.AcquireTokenOptions.ExtraParameters);
         Assert.Equal("user-123", result.Claims.Subject);
         Assert.Equal("Invoice.Create.Delegated", Assert.Single(result.Claims.Scopes));
+    }
+
+    [Fact]
+    public void SafeIdentitySummaryUsesAgentIdentityFacetAndAuthorizedParty()
+    {
+        var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"azp\":\"interactive-agent-client-id\",\"xms_act_fct\":\"3 9 11\"}"))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        var claims = SafeIdentityClaimReader.Read($"Bearer e30.{payload}.");
+
+        Assert.Equal("interactive-agent-client-id", claims.Actor);
     }
 
     private sealed class RecordingAuthorizationHeaderProvider : IAuthorizationHeaderProvider

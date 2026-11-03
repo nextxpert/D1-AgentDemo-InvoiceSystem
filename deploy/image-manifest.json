@@ -1,26 +1,26 @@
 [
   {
     "Name": "api",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api:7031df03722f",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api@sha256:017550f79fc5a0a9d1f0b54fa4b8a453c1f41ca63f1dcad2ecc0356c47cbe6ec",
-    "Digest": "sha256:017550f79fc5a0a9d1f0b54fa4b8a453c1f41ca63f1dcad2ecc0356c47cbe6ec"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api:97ac87b864ff",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-api@sha256:7ae2a19145bed53e7b8fcc397a58dfb244ca7178529d089e92cb0a855b59d334",
+    "Digest": "sha256:7ae2a19145bed53e7b8fcc397a58dfb244ca7178529d089e92cb0a855b59d334"
   },
   {
     "Name": "worker",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker:7031df03722f",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker@sha256:9b1c8a49f887a67de89bf24fe29e41c61cca5cb57e269b090c20532bf06140ea",
-    "Digest": "sha256:9b1c8a49f887a67de89bf24fe29e41c61cca5cb57e269b090c20532bf06140ea"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker:97ac87b864ff",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-worker@sha256:3f73359053e0b1ed7fe7f876081d4306b03ced5efccea093c74ec42203029aa5",
+    "Digest": "sha256:3f73359053e0b1ed7fe7f876081d4306b03ced5efccea093c74ec42203029aa5"
   },
   {
     "Name": "interactive",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive:obo-user-fix-20261102",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive@sha256:214593a5905c1cd119125a4b7ec55cb5d359692763e5478e78107276e7c6509e",
-    "Digest": "sha256:214593a5905c1cd119125a4b7ec55cb5d359692763e5478e78107276e7c6509e"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive:97ac87b864ff",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-interactive@sha256:4ea1be179339e10679e5229bf12122eb3b4e80b9eeea74e0ff473d4037b745d4",
+    "Digest": "sha256:4ea1be179339e10679e5229bf12122eb3b4e80b9eeea74e0ff473d4037b745d4"
   },
   {
     "Name": "web",
-    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web:callback-fix-20261101",
-    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web@sha256:98bb3cd4001f09e6f8e4e2754af183e12f36f94ba2c1f22231d06bea9cd27a45",
-    "Digest": "sha256:98bb3cd4001f09e6f8e4e2754af183e12f36f94ba2c1f22231d06bea9cd27a45"
+    "TagReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web:97ac87b864ff",
+    "DigestReference": "acrd1invoicedemo.azurecr.io/d1-invoice-web@sha256:a78903993eb5cc93f5ca078e9c5dd1df7338025f4cdc48beffbe305c48633c8e",
+    "Digest": "sha256:a78903993eb5cc93f5ca078e9c5dd1df7338025f4cdc48beffbe305c48633c8e"
   }
 ]
