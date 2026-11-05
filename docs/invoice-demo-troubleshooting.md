@@ -20,6 +20,8 @@ The Web client acquires the Invoice API token separately when the user triggers 
 - **403** means authentication succeeded but authorization failed. Check the exact application role (`Invoice.Create.All`, `Invoice.Read.All`, `Invoice.Approve.All`), delegated scope (`Invoice.Create.Delegated`), user business role (`InvoiceSubmitter`), and agent context. A valid wrong-role token must remain 403.
 - Offline mode uses `X-Demo-Actor`; it is Development-only, synthetic, and not evidence of a live token.
 
+If the Invoice API logs `HasDelegatedScope=True HasSubmitterRole=True HasAgentActor=False HasAgentIdentityFacet=False`, check the **Invoice API resource registration's** `optionalClaims.accessToken`. It must request `xms_act_fct` so Entra emits the agent actor facet (`11`) for an Agent Identity. Entra provisioning configures this claim while preserving existing optional claims. After correcting the registration, restart the Interactive revision to clear its in-memory downstream token cache, then retry Preview before Submit. Do not remove the actor check or accept an ordinary `azp` as agent evidence. See [Microsoft's agent token claims reference](https://learn.microsoft.com/entra/agent-id/agent-token-claims).
+
 ## Autonomous Agent ID / FIC
 
 Check that `AZURE_CLIENT_ID` selects the UAMI attached to `Invoice.Worker`; the FIC is on `D1-Invoice-Workers-Autonomous`; its issuer is the tenant’s v2 issuer; its subject is the UAMI **principal ID**; and its audience is `api://AzureADTokenExchange`. `fmi_path` uses the child agent **client ID**, not the service principal object ID.

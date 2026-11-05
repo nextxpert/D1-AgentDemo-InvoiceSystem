@@ -145,8 +145,22 @@ foreach ($image in $images) {
         throw "Image '$($image.Name)' was not built in the foundation ACR '$($foundation.AcrLoginServer)'."
     }
 }
+if (-not $EntryAgentClientId) {
+    $entryAgent = $entra.PSObject.Properties['EntryAgent']
+    if ($entryAgent -and $entryAgent.Value) {
+        $clientId = $entryAgent.Value.PSObject.Properties['ClientId']
+        if ($clientId) { $EntryAgentClientId = $clientId.Value }
+    }
+}
+if (-not $ApprovalAgentClientId) {
+    $approvalAgent = $entra.PSObject.Properties['ApprovalAgent']
+    if ($approvalAgent -and $approvalAgent.Value) {
+        $clientId = $approvalAgent.Value.PSObject.Properties['ClientId']
+        if ($clientId) { $ApprovalAgentClientId = $clientId.Value }
+    }
+}
 if (-not $EntryAgentClientId -or -not $ApprovalAgentClientId) {
-    throw 'Pass the child Agent Identity client IDs from the Entra manual checkpoint.'
+    throw "Child Agent Identity client IDs are missing. Complete the Entra manual checkpoint to populate EntryAgent.ClientId and ApprovalAgent.ClientId in '$EntraEvidencePath', or pass -EntryAgentClientId and -ApprovalAgentClientId explicitly."
 }
 $parsedAdminIp = $null
 if (-not [Net.IPAddress]::TryParse($AdminClientIp, [ref]$parsedAdminIp) -or $parsedAdminIp.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) {

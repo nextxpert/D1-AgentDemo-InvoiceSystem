@@ -137,6 +137,21 @@ function Ensure-FederatedCredential([string]$BlueprintAppId, [string]$Name, [str
     return Invoke-Graph POST $uri @{ name=$Name; issuer=$expectedIssuer; subject=$Subject; audiences=@('api://AzureADTokenExchange') }
 }
 
+function Set-AgentActorClaim([string]$ApplicationObjectId) {
+    $uri = "https://graph.microsoft.com/v1.0/applications/${ApplicationObjectId}"
+    $app = Invoke-Graph GET "${uri}?`$select=optionalClaims"
+    $optionalClaims = @{ accessToken=@() }
+    if ($app.optionalClaims) {
+        foreach ($property in $app.optionalClaims.PSObject.Properties) {
+            $optionalClaims[$property.Name] = $property.Value
+        }
+    }
+    $accessTokenClaims = @($optionalClaims.accessToken | Where-Object { $null -ne $_ })
+    if ('xms_act_fct' -in @($accessTokenClaims | ForEach-Object { $_.name })) { return }
+    $optionalClaims.accessToken = $accessTokenClaims + @(@{ name='xms_act_fct'; essential=$false })
+    Invoke-Graph PATCH $uri @{ optionalClaims=$optionalClaims } | Out-Null
+}
+
 function Ensure-ApplicationWithApi([string]$DisplayName, [string]$IdentifierUri) {
     $roleDefinitions = @(
         @{ value='Invoice.Create.All'; description='Create and submit fictional invoices autonomously.'; displayName='Create invoices'; members=@('Application') },
@@ -183,6 +198,7 @@ function Ensure-ApplicationWithApi([string]$DisplayName, [string]$IdentifierUri)
         Invoke-Graph PATCH "https://graph.microsoft.com/v1.0/applications/$($app.id)" @{ identifierUris=@($IdentifierUri) } | Out-Null
         $app = Get-ApplicationByName $DisplayName
     }
+    Set-AgentActorClaim $app.id
     $sp = Get-ServicePrincipalByAppId $app.appId
     if (-not $sp) { $sp = Invoke-Graph POST 'https://graph.microsoft.com/v1.0/servicePrincipals' @{ appId=$app.appId } }
     return [pscustomobject]@{ Application=$app; ServicePrincipal=$sp }
