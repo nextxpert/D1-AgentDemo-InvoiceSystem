@@ -6,6 +6,14 @@ The Fictional Invoice Processing System is a separate D1 demo repo that teaches 
 
 This system uses one autonomous runtime with two Microsoft Entra Agent Identities, plus a separate interactive assistant that acts on behalf of a signed-in user. It uses fictional suppliers and invoices only. **No component can initiate a real payment; there is no `Paid` state.**
 
+More information about Microsoft Entra Agent ID can be found in these sources:
+
+- [Microsoft Learn: Microsoft Entra Agent ID](https://learn.microsoft.com/en-us/entra/agent-id/)
+- [Derk van der Woude's Agent articles on Medium](https://medium.com/search?q=Agent&writer=derkvanderwoude)
+- [Microsoft Entra Agent ID video](https://www.youtube.com/watch?v=3QK8ro-Py8Q)
+- [Jan Bakker's resource catalog for learning about agents](https://janbakker.tech/jans-resource-catalog-to-learn-all-about-agents/)
+
+The introduction movie used for the presenation is ([Identity City](https://youtu.be/Tx3q5yoprek))
 
 ## Current status
 
@@ -153,13 +161,6 @@ Expected Entra object names:
 - Protected API registration: `D1-Synthetic-Invoice-API`
 
 The autonomous Container App uses a user-assigned managed identity and FIC on its blueprint. Interactive Web and Interactive API use a separate blueprint/credential boundary. Child-agent creation and tenant consent require explicit manual checkpoints. See [`docs/invoice-demo-setup.md`](docs/invoice-demo-setup.md) for exact object IDs, role/scope setup, and environment configuration.
-
-More information about Microsoft Entra Agent ID can be found in these sources:
-
-- [Microsoft Learn: Microsoft Entra Agent ID](https://learn.microsoft.com/en-us/entra/agent-id/)
-- [Derk van der Woude's Agent articles on Medium](https://medium.com/search?q=Agent&writer=derkvanderwoude)
-- [Microsoft Entra Agent ID video](https://www.youtube.com/watch?v=3QK8ro-Py8Q)
-- [Jan Bakker's resource catalog for learning about agents](https://janbakker.tech/jans-resource-catalog-to-learn-all-about-agents/)
 
 This repo includes deployment scripts only; **they have not provisioned or deployed Azure resources**. The default target is an isolated D1 resource group with D1-prefixed apps. No T1 resource name is a D1 deployment default.
 
